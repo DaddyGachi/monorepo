@@ -1,29 +1,30 @@
 import { clearAuthenticatedOfflineState } from "./offline-session";
+import { secureStorage } from "./secure-storage";
 
 const TOKEN_KEY = "shelterflex_token";
 
-export function getToken(): string | null {
+export async function getToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return await secureStorage.getItem(TOKEN_KEY);
 }
 
-export function setToken(token: string): void {
+export async function setToken(token: string): Promise<void> {
   if (typeof window === "undefined") return;
-  localStorage.setItem(TOKEN_KEY, token);
+  await secureStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearToken(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(TOKEN_KEY);
+  secureStorage.removeItem(TOKEN_KEY);
 }
 
-export function isAuthenticated(): boolean {
-  return !!getToken();
+export async function isAuthenticated(): Promise<boolean> {
+  return !!(await getToken());
 }
 
-export function logout(): void {
+export async function logout(): Promise<void> {
   clearToken();
-  clearAuthenticatedOfflineState();
+  await clearAuthenticatedOfflineState();
   // Redirect to homepage after logout
   if (typeof window !== "undefined") {
     window.location.href = "/";

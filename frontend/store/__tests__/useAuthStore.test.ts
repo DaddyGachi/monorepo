@@ -3,8 +3,8 @@ import { renderHook, act } from "@testing-library/react";
 import useAuthStore from "../useAuthStore";
 
 vi.mock("@/lib/auth", () => ({
-  getToken: vi.fn(() => null),
-  setToken: vi.fn(),
+  getToken: vi.fn(async () => null),
+  setToken: vi.fn(async () => {}),
   clearToken: vi.fn(),
 }));
 
@@ -34,47 +34,56 @@ describe("useAuthStore", () => {
   });
 
   describe("initial state", () => {
-    it("starts unauthenticated when no token exists", () => {
-      mockGetToken.mockReturnValue(null);
+    it("starts unauthenticated when no token exists", async () => {
+      mockGetToken.mockResolvedValueOnce(null);
       resetStore();
 
       const { result } = renderHook(() => useAuthStore());
+      await act(async () => {
+        await result.current.initializeAuth();
+      });
+
       expect(result.current.token).toBeNull();
       expect(result.current.user).toBeNull();
       expect(result.current.isAuthenticated).toBe(false);
     });
 
-    it("starts authenticated when a token exists", () => {
-      mockGetToken.mockReturnValue("existing-token");
+    it("starts authenticated when a token exists", async () => {
+      mockGetToken.mockResolvedValueOnce("existing-token");
       resetStore();
-      // Re-set initial state with the token
-      useAuthStore.setState({
-        token: "existing-token",
-        isAuthenticated: true,
-      });
 
       const { result } = renderHook(() => useAuthStore());
+      await act(async () => {
+        await result.current.initializeAuth();
+      });
+
       expect(result.current.token).toBe("existing-token");
       expect(result.current.isAuthenticated).toBe(true);
     });
   });
 
   describe("setToken", () => {
-    it("sets token and marks authenticated", () => {
+    it("sets token and marks authenticated", async () => {
       const { result } = renderHook(() => useAuthStore());
 
-      act(() => { result.current.setToken("tok_abc"); });
+      await act(async () => {
+        await result.current.setToken("tok_abc");
+      });
 
       expect(result.current.token).toBe("tok_abc");
       expect(result.current.isAuthenticated).toBe(true);
       expect(mockSetToken).toHaveBeenCalledWith("tok_abc");
     });
 
-    it("clears token when set to null", () => {
+    it("clears token when set to null", async () => {
       const { result } = renderHook(() => useAuthStore());
 
-      act(() => { result.current.setToken("tok_abc"); });
-      act(() => { result.current.setToken(null); });
+      await act(async () => {
+        await result.current.setToken("tok_abc");
+      });
+      await act(async () => {
+        await result.current.setToken(null);
+      });
 
       expect(result.current.token).toBeNull();
       expect(result.current.isAuthenticated).toBe(false);
@@ -103,15 +112,19 @@ describe("useAuthStore", () => {
   });
 
   describe("logout", () => {
-    it("clears all auth state", () => {
+    it("clears all auth state", async () => {
       const { result } = renderHook(() => useAuthStore());
 
-      act(() => { result.current.setToken("tok_xyz"); });
+      await act(async () => {
+        await result.current.setToken("tok_xyz");
+      });
       act(() => { result.current.setUser({ id: "u1", email: "a@b.com" }); });
 
       expect(result.current.isAuthenticated).toBe(true);
 
-      act(() => { result.current.logout(); });
+      await act(async () => {
+        await result.current.logout();
+      });
 
       expect(result.current.token).toBeNull();
       expect(result.current.user).toBeNull();
@@ -119,78 +132,33 @@ describe("useAuthStore", () => {
       expect(mockClearToken).toHaveBeenCalled();
     });
 
-    it("leaves no residual token in storage", () => {
+    it("is idempotent — logout twice doesn't throw", async () => {
       const { result } = renderHook(() => useAuthStore());
 
-      act(() => { result.current.setToken("tok_xyz"); });
-      act(() => { result.current.logout(); });
-
-      // clearToken was called — localStorage should be clean
-      expect(localStorage.getItem("shelterflex_token")).toBeNull();
-    });
-
-    it("is idempotent — logout twice doesn't throw", () => {
-      const { result } = renderHook(() => useAuthStore());
-
-      act(() => { result.current.logout(); });
-      act(() => { result.current.logout(); });
+      await act(async () => {
+        await result.current.logout();
+        await result.current.logout();
+      });
 
       expect(result.current.isAuthenticated).toBe(false);
     });
   });
 
   describe("selectors", () => {
-    it("isAuthenticated selector reflects state", () => {
+    it("isAuthenticated selector reflects state", async () => {
       const { result } = renderHook(() => useAuthStore());
 
       expect(useAuthStore.getState().isAuthenticated).toBe(false);
 
-      act(() => { result.current.setToken("tok_1"); });
+      await act(async () => {
+        await result.current.setToken("tok_1");
+      });
       expect(useAuthStore.getState().isAuthenticated).toBe(true);
 
-      act(() => { result.current.logout(); });
+      await act(async () => {
+        await result.current.logout();
+      });
       expect(useAuthStore.getState().isAuthenticated).toBe(false);
-    });
-  });
-
-  describe("persistence", () => {
-    it("rehydrates from localStorage on fresh read", () => {
-      // Simulate persisted state
-      localStorage.setItem(
-        "shelterflex-auth-storage",
-        JSON.stringify({
-          state: {
-            token: "persisted-token",
-            user: { id: "u1", email: "a@b.com" },
-            isAuthenticated: true,
-          },
-          version: 1,
-        }),
-      );
-
-      // Fresh store read should rehydrate
-      const stored = JSON.parse(localStorage.getItem("shelterflex-auth-storage")!);
-      expect(stored.state.token).toBe("persisted-token");
-      expect(stored.state.isAuthenticated).toBe(true);
-    });
-
-    it("does not resurrect cleared state", () => {
-      // Simulate cleared state
-      localStorage.setItem(
-        "shelterflex-auth-storage",
-        JSON.stringify({
-          state: {
-            token: null,
-            user: null,
-            isAuthenticated: false,
-          },
-          version: 1,
-        }),
-      );
-
-      const stored = JSON.parse(localStorage.getItem("shelterflex-auth-storage")!);
-      expect(stored.state.token).toBeNull();
-      expect(stored.state.isAuthenticated).toBe(false);
     });
   });
 });
