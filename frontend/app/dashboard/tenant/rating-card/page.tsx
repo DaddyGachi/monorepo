@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import RatingCard, { RatingCardEmpty } from "@/components/tenant/RatingCard";
 import {
   getRatingCard,
   generateShareToken,
@@ -127,53 +128,11 @@ export default function TenantRatingCardPage() {
               ))}
             </div>
           ) : !card || card.totalRatings === 0 ? (
-            <Card className="border-3 border-foreground p-12 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] text-center">
-              <Star className="mx-auto h-16 w-16 text-muted-foreground" />
-              <h3 className="mt-4 font-bold text-lg">No Ratings Yet</h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Your rating card will appear here once landlords rate you after
-                completed deals.
-              </p>
-            </Card>
+            <RatingCardEmpty />
           ) : (
             <div className="space-y-6">
               {/* Score Overview */}
-              <div className="grid gap-6 lg:grid-cols-3">
-                {/* Composite Score */}
-                <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                  <div className="text-center">
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Composite Score
-                    </p>
-                    <div className="flex items-center justify-center gap-1 mb-2">
-                      {renderStars(card.compositeScore)}
-                    </div>
-                    <p className="text-5xl font-mono font-black text-primary">
-                      {card.compositeScore}
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      out of 5.0
-                    </p>
-                  </div>
-                </Card>
-
-                {/* Score Breakdown */}
-                <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] lg:col-span-2">
-                  <h3 className="mb-4 font-bold">Score Breakdown</h3>
-                  <div className="space-y-4">
-                    {renderScoreBar("Payment History", card.paymentScore)}
-                    {renderScoreBar("Property Care", card.propertyCareScore)}
-                    {renderScoreBar(
-                      "Communication",
-                      card.communicationScore,
-                    )}
-                  </div>
-                  <p className="mt-4 text-sm text-muted-foreground">
-                    Based on {card.totalRatings} rating
-                    {card.totalRatings !== 1 ? "s" : ""} from landlords
-                  </p>
-                </Card>
-              </div>
+              <RatingCard card={card} variant="full" />
 
               {/* Share Card */}
               <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">

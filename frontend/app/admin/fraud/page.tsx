@@ -46,7 +46,7 @@ export default function FraudAdminPage() {
           "/bond/withdraw": setWithdrawBond,
         }[endpoint]
         if (setter) {
-          setter(prev => ({ ...prev, [key]: "" }))
+          (setter as any)((prev: any) => ({ ...prev, [key]: "" }))
         }
       })
     } catch (err) {

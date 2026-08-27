@@ -31,8 +31,11 @@ interface PhotoGalleryProps {
   readOnly?: boolean
 }
 
+function isLocalUrl(url: string): boolean {
+  return url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('/');
+}
+
 export function PhotoGallery({ propertyId, initialPhotos = [], onPhotosChange, readOnly = false }: PhotoGalleryProps) {
-  const isLocalUrl = (url: string) => url.startsWith('data:') || url.startsWith('blob:');
   const [photos, setPhotos] = useState<PropertyPhoto[]>(initialPhotos)
   const [selectedPhoto, setSelectedPhoto] = useState<PropertyPhoto | null>(null)
   const [lightboxOpen, setLightboxOpen] = useState(false)

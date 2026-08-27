@@ -37,7 +37,7 @@ export default function SignupPage() {
     clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<AccountSignupFormValues>({
-    resolver: zodResolver(accountSignupSchema),
+    resolver: zodResolver(accountSignupSchema) as any,
     mode: "onBlur",
     reValidateMode: "onBlur",
     shouldFocusError: true,
@@ -46,7 +46,7 @@ export default function SignupPage() {
       email: "",
       phone: "",
       password: "",
-      terms: false,
+      terms: false as any,
     },
   });
 
@@ -175,7 +175,7 @@ export default function SignupPage() {
                   <Input
                     id="full-name"
                     type="text"
-                    {...register("fullName", { onChange: () => clearErrors(["fullName", "root.serverError"]) })}
+                    {...register("fullName", { onChange: () => clearErrors(["fullName", "root.serverError" as any]) })}
                     placeholder="Enter your full name"
                     aria-invalid={Boolean(errors.fullName)}
                     aria-describedby={errors.fullName ? "signup-full-name-error" : undefined}
@@ -198,7 +198,7 @@ export default function SignupPage() {
                   <Input
                     id="email"
                     type="email"
-                    {...register("email", { onChange: () => clearErrors(["email", "root.serverError"]) })}
+                    {...register("email", { onChange: () => clearErrors(["email", "root.serverError" as any]) })}
                     placeholder="you@email.com"
                     aria-invalid={Boolean(errors.email)}
                     aria-describedby={errors.email ? "signup-email-error" : undefined}
@@ -221,7 +221,7 @@ export default function SignupPage() {
                   <Input
                     id="phone"
                     type="tel"
-                    {...register("phone", { onChange: () => clearErrors(["phone", "root.serverError"]) })}
+                    {...register("phone", { onChange: () => clearErrors(["phone", "root.serverError" as any]) })}
                     placeholder="08X XXX XXXX"
                     aria-invalid={Boolean(errors.phone)}
                     aria-describedby={errors.phone ? "signup-phone-error" : undefined}
@@ -245,7 +245,7 @@ export default function SignupPage() {
                     <Input
                       id="password"
                       type={showPassword ? "text" : "password"}
-                      {...register("password", { onChange: () => clearErrors(["password", "root.serverError"]) })}
+                      {...register("password", { onChange: () => clearErrors(["password", "root.serverError" as any]) })}
                       placeholder="Create a password"
                       aria-invalid={Boolean(errors.password)}
                       aria-describedby={errors.password ? "signup-password-error" : undefined}
@@ -298,7 +298,7 @@ export default function SignupPage() {
                     <input
                       id="signup-terms"
                       type="checkbox"
-                      {...register("terms", { onChange: () => clearErrors(["terms", "root.serverError"]) })}
+                      {...register("terms", { onChange: () => clearErrors(["terms", "root.serverError" as any]) })}
                       aria-invalid={Boolean(errors.terms)}
                       aria-describedby={errors.terms ? "signup-terms-error" : undefined}
                       disabled={isSubmitting}
