@@ -4,7 +4,17 @@
  * Wraps any SorobanAdapter to automatically track RPC call metrics
  */
 
-import { SorobanAdapter, RecordReceiptParams, TenantReputationRecord, OraclePriceReading, DelegationRecord } from './adapter.js';
+import {
+  SorobanAdapter,
+  RecordReceiptParams,
+  TenantReputationRecord,
+  OraclePriceReading,
+  DelegationRecord,
+  CreateGovernanceProposalParams,
+  GovernanceVoteParams,
+  GovernanceProposal,
+  UnsignedTransaction,
+} from './adapter.js';
 import { SorobanConfig } from './client.js';
 import { RawReceiptEvent } from '../indexer/event-parser.js';
 import { recordSorobanRpcCall } from '../utils/metrics.js';
@@ -246,6 +256,58 @@ export class MetricsSorobanAdapter implements SorobanAdapter {
       throw new Error('isOraclePriceStale not implemented');
     }
     return this.trackCall('isOraclePriceStale', () => this.wrapped.isOraclePriceStale!(pair));
+  }
+
+  // governance contract (issue #1494)
+  async createProposal?(params: CreateGovernanceProposalParams): Promise<UnsignedTransaction> {
+    if (!this.wrapped.createProposal) {
+      throw new Error('createProposal not implemented');
+    }
+    return this.trackCall('createProposal', () => this.wrapped.createProposal!(params));
+  }
+
+  async vote?(params: GovernanceVoteParams): Promise<UnsignedTransaction> {
+    if (!this.wrapped.vote) {
+      throw new Error('vote not implemented');
+    }
+    return this.trackCall('vote', () => this.wrapped.vote!(params));
+  }
+
+  async submitGovernanceTransaction?(signedXdr: string): Promise<{ txHash: string }> {
+    if (!this.wrapped.submitGovernanceTransaction) {
+      throw new Error('submitGovernanceTransaction not implemented');
+    }
+    return this.trackCall('submitGovernanceTransaction', () =>
+      this.wrapped.submitGovernanceTransaction!(signedXdr)
+    );
+  }
+
+  async finalizeProposal?(proposalId: number): Promise<string> {
+    if (!this.wrapped.finalizeProposal) {
+      throw new Error('finalizeProposal not implemented');
+    }
+    return this.trackCall('finalizeProposal', () => this.wrapped.finalizeProposal!(proposalId));
+  }
+
+  async executeProposal?(proposalId: number): Promise<string> {
+    if (!this.wrapped.executeProposal) {
+      throw new Error('executeProposal not implemented');
+    }
+    return this.trackCall('executeProposal', () => this.wrapped.executeProposal!(proposalId));
+  }
+
+  async getProposal?(proposalId: number): Promise<GovernanceProposal | null> {
+    if (!this.wrapped.getProposal) {
+      throw new Error('getProposal not implemented');
+    }
+    return this.trackCall('getProposal', () => this.wrapped.getProposal!(proposalId));
+  }
+
+  async getProposalCount?(): Promise<number> {
+    if (!this.wrapped.getProposalCount) {
+      throw new Error('getProposalCount not implemented');
+    }
+    return this.trackCall('getProposalCount', () => this.wrapped.getProposalCount!());
   }
 
   /**

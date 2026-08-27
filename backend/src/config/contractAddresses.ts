@@ -22,6 +22,10 @@ export const CONTRACT_ENV_VARS = {
   rentWallet: 'SOROBAN_RENT_WALLET_ID',
   slashingModule: 'SOROBAN_SLASHING_MODULE_ID',
   bondCollateral: 'SOROBAN_BOND_COLLATERAL_ID',
+  // Stake-weighted parameter governance (contracts/governance). Distinct from
+  // `timelock` above — the timelock contract merely uses "governance" as its
+  // event-topic namespace and is an unrelated feature.
+  governance: 'SOROBAN_GOVERNANCE_ID',
 } as const
 
 export type ContractName = keyof typeof CONTRACT_ENV_VARS

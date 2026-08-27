@@ -107,6 +107,61 @@ export interface OraclePriceReading {
 }
 
 /**
+ * Mirrors `ProposalStatus` in contracts/governance/src/lib.rs.
+ */
+export type GovernanceProposalStatus =
+  | 'Active'
+  | 'Passed'
+  | 'Rejected'
+  | 'Executed'
+  | 'Cancelled'
+
+/**
+ * Mirrors the `Proposal` struct in contracts/governance/src/lib.rs.
+ *
+ * All i128 fields are carried as decimal *strings* rather than numbers so that
+ * values larger than Number.MAX_SAFE_INTEGER survive the trip through JSON
+ * without silent precision loss.
+ *
+ * `paramKey` is an arbitrary Soroban `Symbol` chosen by the proposer — the
+ * contract neither validates nor enumerates it, so it is opaque to the backend
+ * too (see the PR description's contract findings).
+ */
+export interface GovernanceProposal {
+  id: number
+  proposer: string
+  paramKey: string
+  currentValue: string
+  proposedValue: string
+  votesFor: string
+  votesAgainst: string
+  status: GovernanceProposalStatus
+  createdAt: number
+  votingEndsAt: number
+  snapshottedTotalStaked: string
+}
+
+export interface CreateGovernanceProposalParams {
+  /** Stellar address of the proposer; also the transaction's source account. */
+  proposer: string
+  paramKey: string
+  currentValue: bigint
+  proposedValue: bigint
+}
+
+export interface GovernanceVoteParams {
+  /** Stellar address of the voter; also the transaction's source account. */
+  voter: string
+  proposalId: number
+  support: boolean
+}
+
+/** An unsigned transaction envelope awaiting a signature from the end user's wallet. */
+export interface UnsignedTransaction {
+  xdr: string
+}
+
+/**
  * Callback fired after a Stellar transaction is signed and hashed but *before*
  * it is broadcast to the network. Persisting the hash at this point allows a
  * worker that crashes between broadcast and result-recording to recover by
@@ -342,4 +397,28 @@ export interface SorobanAdapter {
   depositBond?(inspector: string, amount: bigint): Promise<void>
   withdrawBond?(inspector: string, amount: bigint): Promise<void>
   getBondBalance?(inspector: string): Promise<bigint>
+
+  // ── governance contract — stake-weighted parameter voting (issue #1494) ────
+  //
+  // `create_proposal` and `vote` call `require_auth()` on the proposer/voter,
+  // so they cannot be signed with SOROBAN_ADMIN_SECRET on a user's behalf.
+  // These two methods therefore return an *unsigned* envelope for the user's
+  // own wallet to sign, which is then broadcast via submitGovernanceTransaction.
+  createProposal?(params: CreateGovernanceProposalParams): Promise<UnsignedTransaction>
+  vote?(params: GovernanceVoteParams): Promise<UnsignedTransaction>
+  /**
+   * Broadcast a transaction envelope that was signed client-side (by the
+   * connected wallet) and wait for confirmation. Needed to complete the
+   * user-signed half of the flow above; it authorizes nothing itself.
+   */
+  submitGovernanceTransaction?(signedXdr: string): Promise<{ txHash: string }>
+  /**
+   * `finalize_proposal` and `execute_proposal` take no Address argument and
+   * call no `require_auth()` on-chain — they are permissionless once their
+   * time conditions are met. The admin key here only pays the fee and submits.
+   */
+  finalizeProposal?(proposalId: number): Promise<string>
+  executeProposal?(proposalId: number): Promise<string>
+  getProposal?(proposalId: number): Promise<GovernanceProposal | null>
+  getProposalCount?(): Promise<number>
 }
