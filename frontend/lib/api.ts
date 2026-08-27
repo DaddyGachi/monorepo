@@ -1,5 +1,6 @@
 import type { BackendErrorResponse } from './errors'
 import { enqueueOfflineRequest } from './offline-queue'
+import { newIdempotencyKey } from './paymentOffline'
 
 const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 const apiVersion = "/api/v1";
@@ -126,6 +127,14 @@ export async function apiFetch<T>(
 
   const method = (options?.method ?? "GET").toUpperCase();
   await attachCsrfHeaderIfNeeded(headers, method)
+
+  if (isStateMutatingMethod(method)) {
+    const hasIdempotencyKey =
+      headers.has("Idempotency-Key") || headers.has("idempotency-key");
+    if (!hasIdempotencyKey) {
+      headers.set("Idempotency-Key", newIdempotencyKey());
+    }
+  }
 
   try {
     if (shouldQueueOfflineRequest(method)) {
