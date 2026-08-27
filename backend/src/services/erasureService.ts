@@ -64,8 +64,9 @@ export class ErasureService {
   }
 
   /**
-   * Anonymise PII fields but retain the user row and transaction records.
-   * Financial records keep the same user_id as an anonymised reference.
+   * Anonymise PII fields across users, landlord profiles, onboarding drafts, KYC docs,
+   * messages, tenant document vault records, support messages, notifications, apartment reviews,
+   * and revoke sessions, all within a single atomic transaction.
    */
   async confirmErasure(requestId: string, adminUserId: string): Promise<void> {
     const pool = await this.pool()
@@ -121,6 +122,63 @@ export class ErasureService {
            updated_at = NOW()
          WHERE user_id = $1`,
         [userId, token],
+      )
+
+      // Cascade to messages / conversations (sender references & body content)
+      await pool.query(
+        `UPDATE messages SET
+           body = $2,
+           sender_id = $3,
+           updated_at = NOW()
+         WHERE sender_id = $1 OR recipient_id = $1`,
+        [userId, '[ERASED_MESSAGE]', token],
+      )
+
+      // Cascade to tenant document vault records
+      await pool.query(
+        `UPDATE tenant_documents SET
+           file_name = $2,
+           storage_key = $2,
+           description = NULL,
+           tags = '[]'::jsonb,
+           updated_at = NOW()
+         WHERE user_id = $1`,
+        [userId, token],
+      )
+
+      // Cascade to support messages
+      await pool.query(
+        `UPDATE support_messages SET
+           name = $2,
+           email = $3,
+           phone = NULL,
+           message = $4,
+           ip = NULL,
+           user_agent = NULL
+         WHERE email = (SELECT email FROM users WHERE id = $1) OR name = $1 OR user_id = $1`,
+        [userId, token, `${token}@erased.local`, '[ERASED_SUPPORT_MESSAGE]'],
+      )
+
+      // Cascade to notification records
+      await pool.query(
+        `UPDATE notifications SET
+           recipient = $2,
+           title = $3,
+           body = $3,
+           payload = '{}'::jsonb,
+           updated_at = NOW()
+         WHERE recipient = $1 OR user_id = $1`,
+        [userId, `${token}@erased.local`, token],
+      )
+
+      // Cascade to apartment reviews / property reviews author references
+      await pool.query(
+        `UPDATE apartment_reviews SET
+           author_name = $2,
+           comment = $3,
+           updated_at = NOW()
+         WHERE author_id = $1 OR user_id = $1`,
+        [userId, token, '[ERASED_REVIEW]'],
       )
 
       await pool.query(
