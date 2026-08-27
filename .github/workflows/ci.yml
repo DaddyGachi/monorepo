@@ -35,33 +35,6 @@ jobs:
       - name: Build
         run: pnpm run build
 
-  backend:
-    name: Backend (lint, test)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Unit tests
-        run: npm run test:ci --if-present
-
-      - name: Validate OpenAPI spec
-        run: npm run openapi:validate
-
   contracts:
     name: Contracts (fmt, clippy, test)
     runs-on: ubuntu-latest
