@@ -27,6 +27,20 @@ export type AdminOperation =
   | 'settle_dispute_timeout'
   | 'register_deal'
   | 'record_equity_payment'
+  | 'stake'
+  | 'unstake'
+  | 'claim'
+  | 'utilize_stake'
+  | 'delegate'
+  | 'request_undelegate'
+  | 'complete_undelegate'
+  | 'claim_delegatee_rewards'
+  | 'set_commission'
+  | 'claim_commission'
+  | 'fund_epoch_rewards'
+  | 'seal_epoch'
+  | 'rent_wallet_credit'
+  | 'rent_wallet_debit'
   // governance contract (issue #1494). Both are permissionless on-chain — the
   // contract functions take no Address and call no require_auth() — so the
   // admin key only pays the fee and submits; it authorizes nothing user-specific.
@@ -168,6 +182,16 @@ export class AdminSigningService {
       'settle_dispute_timeout',
       'register_deal',
       'record_equity_payment',
+      'stake',
+      'unstake',
+      'claim',
+      'utilize_stake',
+      'delegate',
+      'request_undelegate',
+      'complete_undelegate',
+      'claim_delegatee_rewards',
+      'set_commission',
+      'claim_commission',
       'finalize_proposal',
       'execute_proposal',
     ]

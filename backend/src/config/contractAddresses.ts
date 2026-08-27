@@ -8,12 +8,20 @@ export const CONTRACT_ENV_VARS = {
   whistleblowerValidation: 'SOROBAN_WHISTLEBLOWER_VALIDATION_ID',
   stakingPool: 'SOROBAN_STAKING_POOL_ID',
   stakingRewards: 'SOROBAN_STAKING_REWARDS_ID',
+  mvpStakingPool: 'SOROBAN_MVP_STAKING_POOL_ID',
+  stakeDelegation: 'SOROBAN_STAKE_DELEGATION_ID',
   timelock: 'SOROBAN_TIMELOCK_ID',
   inspectorBond: 'SOROBAN_INSPECTOR_BOND_ID',
   tenantReputation: 'SOROBAN_TENANT_REPUTATION_ID',
   usdcToken: 'SOROBAN_USDC_TOKEN_ID',
   rentToOwn: 'SOROBAN_RENT_TO_OWN_ID',
   oraclePriceFeeds: 'SOROBAN_ORACLE_PRICE_FEEDS_ID',
+  transactionReceipt: 'SOROBAN_TRANSACTION_RECEIPT_ID',
+  allowlistRegistry: 'SOROBAN_ALLOWLIST_REGISTRY_ID',
+  epochRewards: 'SOROBAN_EPOCH_REWARDS_ID',
+  rentWallet: 'SOROBAN_RENT_WALLET_ID',
+  slashingModule: 'SOROBAN_SLASHING_MODULE_ID',
+  bondCollateral: 'SOROBAN_BOND_COLLATERAL_ID',
   // Stake-weighted parameter governance (contracts/governance). Distinct from
   // `timelock` above — the timelock contract merely uses "governance" as its
   // event-topic namespace and is an unrelated feature.

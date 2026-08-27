@@ -1,6 +1,15 @@
 # MVP Staking Pool
 
-A minimal Soroban staking pool contract for rent funding and future profit sharing.
+A Soroban staking pool contract for rent funding and future profit sharing.
+
+## Relationship to Existing Staking Contracts
+
+`mvp_staking_pool` is currently an additive, experimental pool. It does not
+replace `staking_pool` or `staking_rewards`, and this repository does not
+migrate state or users between them. The existing pair remains the product's
+legacy staking flow; this contract is being wired separately because it adds a
+used/unused stake partition for future protocol consumers such as collateral
+or inspector bonds.
 
 ## Overview
 
@@ -10,6 +19,8 @@ This is a minimal viable product (MVP) staking pool contract that provides the e
 
 - **Token Staking**: Users can stake USDC tokens into the pool
 - **Token Unstaking**: Users can unstake their tokens from the pool
+- **Stake Utilization**: Admin-authorized flows can mark stake as used while
+	leaving the unused portion withdrawable
 - **Balance Tracking**: Individual user balances and total pool balance
 - **Reward Accrual (Index-Based)**: Rewards accrue per-user via a global reward index (no iteration over stakers)
 - **Admin Controls**: Admin can pause/unpause the contract
@@ -27,12 +38,18 @@ This is a minimal viable product (MVP) staking pool contract that provides the e
 - `total_staked() -> i128` - Get total tokens staked in pool
 - `claimable(user: Address) -> i128` - Get current claimable rewards for a user
 - `claim(to: Address) -> i128` - Claim accrued rewards to `to`
+- `used_stake(user: Address) -> i128` - Get stake reserved for protocol use
+- `unused_stake(user: Address) -> i128` - Get stake still available to unstake
+- `utilize_stake(admin: Address, user: Address, amount: i128)` - Reserve unused
+	stake for an authorized protocol use
 
 ### Admin Functions
 
 - `pause()` - Pause the contract (admin only)
 - `unpause()` - Unpause the contract (admin only)
 - `fund_rewards(from: Address, amount: i128)` - Fund rewards and update the global reward index (admin only)
+- `propose_upgrade`, `execute_upgrade`, `emergency_upgrade`, `cancel_upgrade` -
+	Upgrade governance operations (admin/guardian authorization as applicable)
 
 ## Reward Accrual Model
 

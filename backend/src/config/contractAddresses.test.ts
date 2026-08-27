@@ -33,6 +33,28 @@ describe('contract address config', () => {
     ).toThrow('Invalid Soroban contract ID in SOROBAN_ORACLE_PRICE_FEEDS_ID')
   })
 
+  it('recognizes SOROBAN_MVP_STAKING_POOL_ID (issue #1493)', () => {
+    expect(CONTRACT_ENV_VARS.mvpStakingPool).toBe('SOROBAN_MVP_STAKING_POOL_ID')
+
+    const addresses = loadContractAddresses({
+      SOROBAN_MVP_STAKING_POOL_ID: VALID_CONTRACT_ID,
+    })
+    expect(addresses.mvpStakingPool).toBe(VALID_CONTRACT_ID)
+  })
+
+  it('recognizes SOROBAN_STAKE_DELEGATION_ID (issue #1489)', () => {
+    expect(CONTRACT_ENV_VARS.stakeDelegation).toBe('SOROBAN_STAKE_DELEGATION_ID')
+
+    const addresses = loadContractAddresses({
+      SOROBAN_STAKE_DELEGATION_ID: VALID_CONTRACT_ID,
+    })
+    expect(addresses.stakeDelegation).toBe(VALID_CONTRACT_ID)
+
+    expect(() =>
+      loadContractAddresses({ SOROBAN_STAKE_DELEGATION_ID: 'not-a-contract' }),
+    ).toThrow('Invalid Soroban contract ID in SOROBAN_STAKE_DELEGATION_ID')
+  })
+
   it('recognizes SOROBAN_GOVERNANCE_ID as distinct from SOROBAN_TIMELOCK_ID (issue #1494)', () => {
     expect(CONTRACT_ENV_VARS.governance).toBe('SOROBAN_GOVERNANCE_ID')
     expect(CONTRACT_ENV_VARS.governance).not.toBe(CONTRACT_ENV_VARS.timelock)

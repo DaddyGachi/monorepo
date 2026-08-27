@@ -15,6 +15,8 @@ import { depositStore } from '../models/depositStore.js'
 import { getPaymentProvider } from '../payments/index.js'
 import { ngnWalletStore } from '../models/ngnWalletStore.js'
 import { LedgerEntryType } from '../models/ngnWallet.js'
+import { outboxStore } from '../outbox/store.js'
+import { TxType } from '../outbox/types.js'
 
 export class NgnWalletService {
   // We keep these for some temporary tracking, but the LEDGER is the source of truth for balance
@@ -211,6 +213,31 @@ export class NgnWalletService {
         referenceId: reference
       })
 
+      // Mirror to rent_wallet contract for on-chain record
+      // Note: For MVP, we use userId as the account identifier since NGN wallet
+      // doesn't track Stellar addresses. In production, this should be tied to
+      // the user's Stellar wallet address from the wallet service.
+      try {
+        await outboxStore.create({
+          txType: TxType.RENT_WALLET_CREDIT,
+          source: 'ngn_wallet',
+          ref: reference,
+          payload: {
+            account: `user_${userId}`,
+            amount: amountNgn.toString(),
+            userId,
+          },
+        })
+      } catch (outboxError) {
+        // Log but don't fail the top-up if outbox creation fails
+        logger.warn('Failed to create rent wallet credit outbox item', {
+          userId,
+          amountNgn,
+          reference,
+          error: outboxError instanceof Error ? outboxError.message : String(outboxError),
+        })
+      }
+
       const balance = await this.getBalance(userId)
       const riskState = await userRiskStateStore.getByUserId(userId)
       if (riskState?.isFrozen && riskState.freezeReason === 'NEGATIVE_BALANCE' && balance.totalNgn >= 0) {
@@ -280,6 +307,27 @@ export class NgnWalletService {
         referenceId: reference
       })
       this.creditedDeposits.add(depositId)
+
+      // Mirror to rent_wallet contract for on-chain record
+      try {
+        await outboxStore.create({
+          txType: TxType.RENT_WALLET_CREDIT,
+          source: 'ngn_wallet',
+          ref: reference,
+          payload: {
+            account: `user_${userId}`,
+            amount: amountNgn.toString(),
+            userId,
+          },
+        })
+      } catch (outboxError) {
+        logger.warn('Failed to create rent wallet credit outbox item', {
+          userId,
+          amountNgn,
+          reference,
+          error: outboxError instanceof Error ? outboxError.message : String(outboxError),
+        })
+      }
 
       const balance = await this.getBalance(userId)
       const riskState = await userRiskStateStore.getByUserId(userId)

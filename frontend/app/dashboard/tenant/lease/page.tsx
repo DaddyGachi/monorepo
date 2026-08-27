@@ -18,11 +18,13 @@ import {
   Briefcase,
   AlertCircle,
   Loader2,
+  FileSignature,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import { LeaseESignature } from "@/components/properties/LeaseESignature";
 import {
   searchEmployers,
   updateDealRepayment,
@@ -168,7 +170,7 @@ export default function TenantLeasePage() {
   );
   const [documents, setDocuments] = useState<TenantLeaseDocument[]>([]);
   const [dealId, setDealId] = useState<string | null>(null);
-
+  const [isSigningOpen, setIsSigningOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -330,9 +332,18 @@ export default function TenantLeasePage() {
                 View your lease details and documents
               </p>
             </div>
-            <div className="flex items-center gap-2 border-3 border-foreground bg-secondary px-4 py-2 font-bold">
-              <CheckCircle className="h-5 w-5" />
-              Active Lease
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={() => setIsSigningOpen(true)}
+                className="border-3 border-foreground bg-primary font-bold shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]"
+              >
+                <FileSignature className="mr-2 h-5 w-5" />
+                Sign Lease Agreement
+              </Button>
+              <div className="flex items-center gap-2 border-3 border-foreground bg-secondary px-4 py-2 font-bold">
+                <CheckCircle className="h-5 w-5" />
+                Active Lease
+              </div>
             </div>
           </div>
 
@@ -641,6 +652,14 @@ export default function TenantLeasePage() {
                   }}
                 />
               )}
+
+              <LeaseESignature
+                propertyId={dealId}
+                propertyName={leaseDetails.property.title}
+                dealId={dealId}
+                isOpen={isSigningOpen}
+                onClose={() => setIsSigningOpen(false)}
+              />
             </div>
 
             <div className="space-y-6">

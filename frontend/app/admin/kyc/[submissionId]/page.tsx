@@ -32,6 +32,17 @@ interface KycRecord {
   livenessSignal?: string | null
 }
 
+interface AllowlistStatus {
+  isAllowlisted: boolean
+  hasWalletAddress: boolean
+  walletAddress: string | null
+  entry: {
+    label: string
+    expires_at: number
+    added_at: number
+  } | null
+}
+
 const statusConfig: Record<KycRecord["status"], { color: string; label: string }> = {
   pending: { color: "bg-yellow-100 text-yellow-800", label: "Pending" },
   in_review: { color: "bg-blue-100 text-blue-800", label: "In Review" },
@@ -50,6 +61,8 @@ export default function KycSubmissionDetailPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [dialogType, setDialogType] = useState<"approve" | "reject" | null>(null)
   const [reason, setReason] = useState("")
+  const [allowlistStatus, setAllowlistStatus] = useState<AllowlistStatus | null>(null)
+  const [allowlistLoading, setAllowlistLoading] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -66,6 +79,25 @@ export default function KycSubmissionDetailPage() {
     }
     void fetchData()
   }, [submissionId])
+
+  useEffect(() => {
+    if (!record) return
+
+    const fetchAllowlistStatus = async () => {
+      setAllowlistLoading(true)
+      try {
+        const result = await apiGet<{ success: boolean; data: AllowlistStatus }>(
+          `/api/kyc/admin/${submissionId}/allowlist-status`
+        )
+        setAllowlistStatus(result.data)
+      } catch (err) {
+        console.error("Failed to load allowlist status:", err)
+      } finally {
+        setAllowlistLoading(false)
+      }
+    }
+    void fetchAllowlistStatus()
+  }, [record, submissionId])
 
   const handleApprove = async () => {
     if (!record) return
@@ -180,6 +212,52 @@ export default function KycSubmissionDetailPage() {
               </div>
             )}
           </div>
+        </Card>
+
+        {/* On-Chain Allowlist Status */}
+        <Card className="mb-6 border-2 border-foreground p-6 shadow-[2px_2px_0px_rgba(26,26,26,1)]">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-bold">On-Chain Allowlist Status</h2>
+            {allowlistLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          </div>
+          {allowlistStatus ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground uppercase w-32">Wallet Address</p>
+                <p className="font-mono text-sm">
+                  {allowlistStatus.walletAddress || "No wallet address"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground uppercase w-32">Allowlisted</p>
+                <Badge className={allowlistStatus.isAllowlisted ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
+                  {allowlistStatus.isAllowlisted ? "Yes" : "No"}
+                </Badge>
+              </div>
+              {allowlistStatus.entry && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-muted-foreground uppercase w-32">Label</p>
+                    <p className="font-bold">{allowlistStatus.entry.label}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-muted-foreground uppercase w-32">Added At</p>
+                    <p className="font-mono text-sm">{new Date(allowlistStatus.entry.added_at * 1000).toLocaleString()}</p>
+                  </div>
+                  {allowlistStatus.entry.expires_at > 0 && (
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-muted-foreground uppercase w-32">Expires At</p>
+                      <p className="font-mono text-sm">{new Date(allowlistStatus.entry.expires_at * 1000).toLocaleString()}</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {allowlistLoading ? "Loading allowlist status..." : "Unable to load allowlist status"}
+            </p>
+          )}
         </Card>
 
         {/* Documents */}

@@ -1092,6 +1092,34 @@ export function createAdminRouter(
                     userId: record.userId,
                   },
                 );
+
+                // Enqueue allowlist add operation for on-chain recording
+                const user = await (req as any).authRepository?.getById(record.userId);
+                if (user?.walletAddress) {
+                  await outboxStore.create({
+                    txType: TxType.ALLOWLIST_ADD,
+                    source: 'kyc_approval',
+                    ref: id,
+                    payload: {
+                      address: user.walletAddress,
+                      label: 'approved',
+                    },
+                    aggregateId: record.userId,
+                    aggregateType: 'user',
+                    eventType: 'KYC_APPROVED',
+                    requestId: req.requestId,
+                  });
+                  logger.info('Allowlist add enqueued for KYC approval', {
+                    outboxRef: id,
+                    userId: record.userId,
+                    address: user.walletAddress,
+                  });
+                } else {
+                  logger.warn('User has no wallet address, skipping allowlist add', {
+                    userId: record.userId,
+                    kycId: id,
+                  });
+                }
               } else {
                 if (record.status !== "pending" && record.status !== "in_review") {
                   return {
@@ -1115,9 +1143,35 @@ export function createAdminRouter(
                     batchId,
                     recordId: id,
                     userId: record.userId,
-                    reason,
                   },
                 );
+
+                // Enqueue allowlist remove operation for on-chain recording
+                const user = await (req as any).authRepository?.getById(record.userId);
+                if (user?.walletAddress) {
+                  await outboxStore.create({
+                    txType: TxType.ALLOWLIST_REMOVE,
+                    source: 'kyc_rejection',
+                    ref: id,
+                    payload: {
+                      address: user.walletAddress,
+                    },
+                    aggregateId: record.userId,
+                    aggregateType: 'user',
+                    eventType: 'KYC_REJECTED',
+                    requestId: req.requestId,
+                  });
+                  logger.info('Allowlist remove enqueued for KYC rejection', {
+                    outboxRef: id,
+                    userId: record.userId,
+                    address: user.walletAddress,
+                  });
+                } else {
+                  logger.warn('User has no wallet address, skipping allowlist remove', {
+                    userId: record.userId,
+                    kycId: id,
+                  });
+                }
               }
 
               return { id, success: true };

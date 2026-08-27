@@ -600,6 +600,256 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/epoch-rewards/stake:
+    post:
+      summary: Stake tokens in epoch rewards contract
+      description: Stake tokens to participate in epoch rewards program.
+      operationId: epochStake
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: string
+                  description: Amount to stake as string (to handle large numbers)
+                  example: "1000000"
+      responses:
+        "200":
+          description: Stake submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, txHash]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  txHash:
+                    type: string
+                    description: Stellar transaction hash
+                    example: "a3f2c1d4e5b6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/unstake:
+    post:
+      summary: Unstake tokens from epoch rewards contract
+      description: Unstake previously staked tokens from epoch rewards program.
+      operationId: epochUnstake
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: string
+                  description: Amount to unstake as string
+                  example: "500000"
+      responses:
+        "200":
+          description: Unstake submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, txHash]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  txHash:
+                    type: string
+                    description: Stellar transaction hash
+                    example: "b4f3d2e5f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/claim:
+    post:
+      summary: Claim epoch rewards
+      description: Claim available rewards from the epoch rewards contract.
+      operationId: epochClaim
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Rewards claimed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, claimedAmount]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  claimedAmount:
+                    type: string
+                    description: Amount claimed as string
+                    example: "1000"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/claimable:
+    get:
+      summary: Get claimable rewards amount
+      description: Query the amount of rewards available to claim for the authenticated user.
+      operationId: epochGetClaimable
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Claimable amount retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, claimable]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  claimable:
+                    type: string
+                    description: Amount available to claim as string
+                    example: "500"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/epoch/{epochNumber}:
+    get:
+      summary: Get epoch information
+      description: Retrieve detailed information about a specific epoch.
+      operationId: epochGetEpoch
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epochNumber
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: The epoch number to query
+      responses:
+        "200":
+          description: Epoch information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/EpochInfo"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/current-epoch:
+    get:
+      summary: Get current epoch number
+      description: Retrieve the current epoch number from the epoch rewards contract.
+      operationId: epochGetCurrentEpoch
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current epoch number retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, currentEpoch]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  currentEpoch:
+                    type: integer
+                    description: Current epoch number
+                    example: 1
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/total-staked:
+    get:
+      summary: Get total staked amount
+      description: Retrieve the total amount of tokens staked in the epoch rewards contract.
+      operationId: epochGetTotalStaked
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Total staked amount retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, totalStaked]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  totalStaked:
+                    type: string
+                    description: Total staked amount as string
+                    example: "1000000"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/property-issue-reports:
     post:
       summary: Submit a property issue report
@@ -2236,6 +2486,446 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/admin/fraud/slashing/submit-evidence:
+    post:
+      summary: Submit evidence to slashing module
+      description: Queues a submit_evidence operation to the slashing module contract via the outbox pattern.
+      operationId: submitSlashingEvidence
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - submitter
+                - commitment
+                - actor
+                - offence
+              properties:
+                submitter:
+                  type: string
+                  description: Stellar address of the evidence submitter
+                  example: "GABC..."
+                commitment:
+                  type: string
+                  description: Commitment hash (hex string)
+                  example: "0x123abc..."
+                actor:
+                  type: string
+                  description: Stellar address of the actor being accused
+                  example: "GXYZ..."
+                offence:
+                  type: string
+                  description: Type of offence
+                  example: "double_signing"
+      responses:
+        '201':
+          description: Evidence submission queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/slashing/reveal-evidence:
+    post:
+      summary: Reveal evidence in slashing module
+      description: Queues a reveal_evidence operation to the slashing module contract via the outbox pattern.
+      operationId: revealSlashingEvidence
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - submitter
+                - slashId
+                - evidence
+                - salt
+              properties:
+                submitter:
+                  type: string
+                  description: Stellar address of the evidence submitter
+                  example: "GABC..."
+                slashId:
+                  type: integer
+                  description: Slash ID from the original submission
+                  example: 1
+                evidence:
+                  type: string
+                  description: Evidence data (hex string)
+                  example: "0x456def..."
+                salt:
+                  type: string
+                  description: Salt used for commitment (hex string)
+                  example: "0x789ghi..."
+      responses:
+        '201':
+          description: Evidence reveal queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/slashing/propose-slash:
+    post:
+      summary: Propose a slash in slashing module
+      description: Queues a propose_slash operation to the slashing module contract via the outbox pattern.
+      operationId: proposeSlash
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - submitter
+                - actor
+                - penaltyBps
+              properties:
+                submitter:
+                  type: string
+                  description: Stellar address of the submitter
+                  example: "GABC..."
+                actor:
+                  type: string
+                  description: Stellar address of the actor to be slashed
+                  example: "GXYZ..."
+                penaltyBps:
+                  type: integer
+                  description: Penalty in basis points (0-10000, where 10000 = 100%)
+                  minimum: 0
+                  maximum: 10000
+                  example: 5000
+      responses:
+        '201':
+          description: Slash proposal queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/slashing/finalize-slash:
+    post:
+      summary: Finalize a slash in slashing module
+      description: Queues a finalize_slash operation to the slashing module contract via the outbox pattern.
+      operationId: finalizeSlash
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - caller
+                - slashId
+              properties:
+                caller:
+                  type: string
+                  description: Stellar address of the caller
+                  example: "GABC..."
+                slashId:
+                  type: integer
+                  description: Slash ID to finalize
+                  example: 1
+      responses:
+        '201':
+          description: Slash finalization queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/slashing/cancel-slash:
+    post:
+      summary: Cancel a slash in slashing module
+      description: Queues a cancel_slash operation to the slashing module contract via the outbox pattern.
+      operationId: cancelSlash
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - admin
+                - slashId
+              properties:
+                admin:
+                  type: string
+                  description: Stellar address of the admin
+                  example: "GABC..."
+                slashId:
+                  type: integer
+                  description: Slash ID to cancel
+                  example: 1
+      responses:
+        '201':
+          description: Slash cancellation queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/bond/deposit:
+    post:
+      summary: Deposit bond to bond collateral contract
+      description: Queues a deposit_bond operation to the bond collateral contract via the outbox pattern.
+      operationId: depositBond
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - inspector
+                - amount
+              properties:
+                inspector:
+                  type: string
+                  description: Stellar address of the inspector
+                  example: "GABC..."
+                amount:
+                  type: string
+                  description: Bond amount (as string to preserve precision)
+                  example: "1000000"
+      responses:
+        '201':
+          description: Bond deposit queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/bond/withdraw:
+    post:
+      summary: Withdraw bond from bond collateral contract
+      description: Queues a withdraw_bond operation to the bond collateral contract via the outbox pattern.
+      operationId: withdrawBond
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - inspector
+                - amount
+              properties:
+                inspector:
+                  type: string
+                  description: Stellar address of the inspector
+                  example: "GABC..."
+                amount:
+                  type: string
+                  description: Bond amount to withdraw (as string to preserve precision)
+                  example: "1000000"
+      responses:
+        '201':
+          description: Bond withdrawal queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/staking/stake:
     post:
       summary: Stake USDC tokens
@@ -2432,6 +3122,274 @@ paths:
                   claimable: "50.250000"
         '401':
           $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/mvp-position:
+    get:
+      summary: Get MVP staking utilization position
+      description: Read the additive MVP pool's total, used, unused, and claimable stake.
+      operationId: getMvpStakingPosition
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: MVP staking position retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MvpStakingPositionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/position:
+    get:
+      summary: Get delegated-staking position
+      description: >-
+        The caller's position inside the stake_delegation contract: the balance
+        that contract holds for them, how much of it is currently delegated, how
+        much is free, and the per-delegatee breakdown. This is a separate ledger
+        from staking_pool — it is never a slice of /api/staking/position.
+      operationId: getDelegationPosition
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Delegated-staking position retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationPositionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/delegatee-earnings:
+    get:
+      summary: Get delegatee earnings
+      description: >-
+        Net rewards claimable by the caller acting as a delegatee (gross minus
+        their commission), plus the accrued commission balance itself.
+      operationId: getDelegateeEarnings
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Delegatee earnings retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegateeEarningsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/delegate:
+    post:
+      summary: Delegate stake to a delegatee
+      description: Routes part of the caller's free stake_delegation balance to a delegatee.
+      operationId: delegateStake
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DelegateRequest'
+      responses:
+        '200':
+          description: Stake delegated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/undelegate/request:
+    post:
+      summary: Request undelegation
+      description: >-
+        Opens the contract's undelegation cooldown. The stake stays delegated
+        until the matching complete call succeeds.
+      operationId: requestUndelegate
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DelegateRequest'
+      responses:
+        '202':
+          description: Undelegation requested; cooldown started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/undelegate/complete:
+    post:
+      summary: Complete a pending undelegation
+      description: >-
+        Settles a pending undelegation. The contract rejects this until its
+        configured cooldown (7 days by default) has elapsed.
+      operationId: completeUndelegate
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delegatee]
+              properties:
+                delegatee:
+                  type: string
+                  description: Delegatee whose pending undelegation should be settled
+                  example: GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H
+      responses:
+        '200':
+          description: Undelegation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/commission:
+    post:
+      summary: Set the caller's delegatee commission
+      description: Sets the commission, in basis points, charged on stake delegated to the caller.
+      operationId: setDelegateeCommission
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rateBps]
+              properties:
+                rateBps:
+                  type: integer
+                  minimum: 0
+                  maximum: 10000
+                  description: Commission in basis points
+                  example: 1000
+      responses:
+        '200':
+          description: Commission updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, txHash, rateBps]
+                properties:
+                  success: { type: boolean, example: true }
+                  txHash: { type: string }
+                  rateBps: { type: integer, example: 1000 }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/claim-rewards:
+    post:
+      summary: Claim delegatee rewards
+      description: Claims the caller's net delegatee rewards (gross minus their commission).
+      operationId: claimDelegateeRewards
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Delegatee rewards claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/claim-commission:
+    post:
+      summary: Claim delegatee commission
+      description: Claims the caller's accrued commission balance.
+      operationId: claimDelegateeCommission
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Commission claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
 
@@ -3925,6 +4883,67 @@ components:
           type: string
           description: Optional FX rate provider
           example: coinbase
+
+    EpochInfo:
+      type: object
+      description: Information about a specific epoch in the epoch rewards contract
+      required:
+        - epoch_number
+        - start_ts
+        - duration_secs
+        - end_ts
+        - seal_ts
+        - sealed
+        - total_rewards
+        - carried_forward
+        - reward_index_at_seal
+        - dust
+        - total_claimable_at_seal
+      properties:
+        epoch_number:
+          type: integer
+          description: The epoch number
+          example: 1
+        start_ts:
+          type: integer
+          description: Unix timestamp when the epoch started
+          example: 1000
+        duration_secs:
+          type: integer
+          description: Duration of the epoch in seconds
+          example: 86400
+        end_ts:
+          type: integer
+          description: Unix timestamp when the epoch ends
+          example: 87400
+        seal_ts:
+          type: integer
+          description: Unix timestamp when the epoch was sealed
+          example: 87400
+        sealed:
+          type: boolean
+          description: Whether the epoch has been sealed
+          example: true
+        total_rewards:
+          type: string
+          description: Total rewards added to the epoch as string
+          example: "10000"
+        carried_forward:
+          type: string
+          description: Amount carried forward from previous epoch as string
+          example: "0"
+        reward_index_at_seal:
+          type: string
+          description: Reward index at the time of sealing as string
+          example: "1000"
+        dust:
+          type: string
+          description: Dust amount as string
+          example: "0"
+        total_claimable_at_seal:
+          type: string
+          description: Total claimable amount at seal as string
+          example: "5000"
     EarningsResponse:
       type: object
       required:
@@ -4336,6 +5355,91 @@ components:
               description: Amount of rewards available for claiming in USDC
               pattern: '^\d+(\.\d{1,6})?$'
               example: "50.250000"
+
+    MvpStakingPositionResponse:
+      type: object
+      required: [success, position]
+      properties:
+        success:
+          type: boolean
+          example: true
+        position:
+          type: object
+          required: [staked, used, unused, claimable]
+          properties:
+            staked: { type: string, example: "1000.000000" }
+            used: { type: string, description: Stake locked for an authorized protocol use, example: "250.000000" }
+            unused: { type: string, description: Stake still available to unstake, example: "750.000000" }
+            claimable: { type: string, example: "50.250000" }
+
+    DelegationPositionResponse:
+      type: object
+      required: [success, position]
+      properties:
+        success:
+          type: boolean
+          example: true
+        position:
+          type: object
+          required: [staked, delegated, free, currentEpoch, delegations]
+          properties:
+            staked:
+              type: string
+              description: Balance held by stake_delegation for the caller (NOT the staking_pool position)
+              example: "1000.000000"
+            delegated: { type: string, description: Portion currently routed to delegatees, example: "250.000000" }
+            free: { type: string, description: Portion still available to delegate or unstake, example: "750.000000" }
+            currentEpoch: { type: integer, description: stake_delegation's current epoch number, example: 4 }
+            delegations:
+              type: array
+              items:
+                type: object
+                required: [delegatee, amountUsdc, activatedEpoch]
+                properties:
+                  delegatee: { type: string, example: GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H }
+                  amountUsdc: { type: string, example: "250.000000" }
+                  activatedEpoch: { type: integer, example: 2 }
+
+    DelegateeEarningsResponse:
+      type: object
+      required: [success, delegatee, earnings]
+      properties:
+        success: { type: boolean, example: true }
+        delegatee: { type: string, example: GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H }
+        earnings:
+          type: object
+          required: [claimable, commissionClaimable]
+          properties:
+            claimable: { type: string, description: Net rewards after the commission split, example: "45.000000" }
+            commissionClaimable: { type: string, description: Accrued commission balance, example: "5.000000" }
+
+    DelegateRequest:
+      type: object
+      required: [delegatee, amountUsdc]
+      properties:
+        delegatee:
+          type: string
+          pattern: '^G[A-Z2-7]{55}$'
+          description: Stellar address of the delegatee
+          example: GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H
+        amountUsdc:
+          type: string
+          pattern: '^\d+(\.\d{1,6})?$'
+          description: Amount in USDC (canonical unit)
+          example: "250.000000"
+
+    DelegationTxResponse:
+      type: object
+      required: [success, txHash]
+      properties:
+        success: { type: boolean, example: true }
+        txHash: { type: string, description: Stellar transaction hash for the submitted contract call }
+        message: { type: string, example: Stake delegated }
+        delegation:
+          type: object
+          properties:
+            delegatee: { type: string }
+            amountUsdc: { type: string }
 
     GovernanceProposalStatus:
       type: string

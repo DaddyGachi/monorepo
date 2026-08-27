@@ -29,6 +29,17 @@ export enum TxType {
   RENT_RELEASE_DISPUTE_RESOLVE = 'rent_release_dispute_resolve',
   RENT_TO_OWN_DEAL_REGISTERED = 'rent_to_own_deal_registered',
   RENT_TO_OWN_EQUITY_PAYMENT = 'rent_to_own_equity_payment',
+  ALLOWLIST_ADD = 'allowlist_add',
+  ALLOWLIST_REMOVE = 'allowlist_remove',
+  RENT_WALLET_CREDIT = 'rent_wallet_credit',
+  RENT_WALLET_DEBIT = 'rent_wallet_debit',
+  SLASHING_SUBMIT_EVIDENCE = 'slashing_submit_evidence',
+  SLASHING_REVEAL_EVIDENCE = 'slashing_reveal_evidence',
+  SLASHING_PROPOSE_SLASH = 'slashing_propose_slash',
+  SLASHING_FINALIZE_SLASH = 'slashing_finalize_slash',
+  SLASHING_CANCEL_SLASH = 'slashing_cancel_slash',
+  BOND_DEPOSIT = 'bond_deposit',
+  BOND_WITHDRAW = 'bond_withdraw',
 }
 
 /**

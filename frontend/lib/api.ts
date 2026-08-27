@@ -1,5 +1,7 @@
 import type { BackendErrorResponse } from './errors'
 import { enqueueOfflineRequest } from './offline-queue'
+import { newIdempotencyKey } from './paymentOffline'
+import { apiRateLimiters } from './rate-limiter'
 
 const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 const apiVersion = "/api/v1";
@@ -78,6 +80,20 @@ function isStateMutatingMethod(method: string): boolean {
   return ["POST", "PUT", "PATCH", "DELETE"].includes(method)
 }
 
+function getRateLimiterForRequest(path: string, options?: RequestInit) {
+  if (path.includes("/auth") || path.includes("/login") || path.includes("/register") || path.includes("/forgot-password")) {
+    return apiRateLimiters.auth;
+  }
+  if (options?.body instanceof FormData || path.includes("/upload")) {
+    return apiRateLimiters.upload;
+  }
+  const method = (options?.method ?? "GET").toUpperCase();
+  if (isStateMutatingMethod(method) && (path.includes("/stake") || path.includes("/claim") || path.includes("/pay") || path.includes("/transfer") || path.includes("/withdraw"))) {
+    return apiRateLimiters.sensitive;
+  }
+  return apiRateLimiters.general;
+}
+
 async function attachCsrfHeaderIfNeeded(headers: Headers, method: string): Promise<void> {
   if (!isBrowser() || !isStateMutatingMethod(method)) {
     return
@@ -114,6 +130,25 @@ export async function apiFetch<T>(
     throw new Error("Missing NEXT_PUBLIC_BACKEND_URL");
   }
 
+  const method = (options?.method ?? "GET").toUpperCase();
+
+  if (isBrowser()) {
+    const limiter = getRateLimiterForRequest(path, options);
+    const identifier = `${method}:${path}`;
+    const check = limiter.checkLimit(identifier);
+    if (!check.allowed) {
+      throw new ApiError({
+        message: "Rate limit exceeded. Please try again later.",
+        status: 429,
+        code: "RATE_LIMIT_EXCEEDED",
+        details: {
+          remaining: check.remaining,
+          resetTime: check.resetTime,
+        },
+      });
+    }
+  }
+
   const token = getAuthToken()
 
   const headers = new Headers(options?.headers);
@@ -124,8 +159,15 @@ export async function apiFetch<T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const method = (options?.method ?? "GET").toUpperCase();
   await attachCsrfHeaderIfNeeded(headers, method)
+
+  if (isStateMutatingMethod(method)) {
+    const hasIdempotencyKey =
+      headers.has("Idempotency-Key") || headers.has("idempotency-key");
+    if (!hasIdempotencyKey) {
+      headers.set("Idempotency-Key", newIdempotencyKey());
+    }
+  }
 
   try {
     if (shouldQueueOfflineRequest(method)) {

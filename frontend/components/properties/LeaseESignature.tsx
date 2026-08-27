@@ -24,6 +24,13 @@ import {
   Shield,
   FileText,
 } from "lucide-react";
+import {
+  getDocumentIntegrity,
+  getLease,
+  submitSignature,
+  voidLease,
+  type DocumentIntegrity,
+} from "@/lib/leaseApi";
 
 interface LeaseESignatureProps {
   propertyId: string;
@@ -43,12 +50,6 @@ type SigningState =
   | "expired-signing-session"
   | "stale-terms";
 
-interface DocumentIntegrity {
-  documentHash: string;
-  documentVersion: string;
-  lastModified: string;
-}
-
 export function LeaseESignature({
   propertyId,
   propertyName,
@@ -66,8 +67,9 @@ export function LeaseESignature({
   const [documentIntegrity, setDocumentIntegrity] = useState<DocumentIntegrity | null>(null);
   const [leaseId, setLeaseId] = useState<string | null>(null);
   const [sessionExpiry, setSessionExpiry] = useState<Date | null>(null);
+  const [isVoiding, setIsVoiding] = useState(false);
 
-  // Simulate fetching document integrity when dialog opens
+  // Fetch the lease document integrity when the dialog opens
   useEffect(() => {
     if (isOpen && state === "not-ready") {
       fetchDocumentIntegrity();
@@ -77,19 +79,18 @@ export function LeaseESignature({
   const fetchDocumentIntegrity = async () => {
     setIsLoading(true);
     try {
-      // In real implementation, this would call the API
-      // For now, simulate the response
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      
+      const response = await getDocumentIntegrity(dealId);
+      const integrity = response.data;
+
       setDocumentIntegrity({
-        documentHash: "a1b2c3d4e5f6" + Math.random().toString(16).slice(2, 10),
-        documentVersion: "v1.0",
-        lastModified: new Date().toISOString(),
+        documentHash: integrity.documentHash,
+        documentVersion: integrity.documentVersion,
+        lastModified: integrity.lastModified,
       });
-      
+
       // Set session expiry to 30 minutes from now
       setSessionExpiry(new Date(Date.now() + 30 * 60 * 1000));
-      
+
       setState("ready-to-sign");
     } catch (err) {
       setError("Failed to load lease document. Please try again.");
@@ -100,18 +101,19 @@ export function LeaseESignature({
   };
 
   const checkForStaleTerms = async () => {
-    // In real implementation, this would re-fetch the document and compare hashes
-    // For now, simulate a check
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // Simulate stale terms detection (10% chance for demo)
-    const isStale = Math.random() < 0.1;
-    
-    if (isStale) {
-      setState("stale-terms");
-      return true;
+    // Re-fetch the latest lease and compare its hash against the loaded one.
+    try {
+      const response = await getLease(dealId);
+      const latest = response.data;
+
+      if (latest && documentIntegrity && latest.documentHash !== documentIntegrity.documentHash) {
+        setState("stale-terms");
+        return true;
+      }
+    } catch {
+      // If we can't confirm freshness, assume the loaded document is current.
     }
-    
+
     return false;
   };
 
@@ -138,27 +140,37 @@ export function LeaseESignature({
     setState("signing");
 
     try {
-      // In real implementation, this would call the signing API
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      // Simulate occasional failure (15% chance for demo)
-      const shouldFail = Math.random() < 0.15;
-      
-      if (shouldFail) {
-        throw new Error("Signing service temporarily unavailable");
-      }
-      
-      setLeaseId("lease-" + Math.random().toString(36).slice(2, 11));
+      const response = await submitSignature(dealId, {
+        signerName: signerName.trim(),
+        signDate,
+        acknowledged,
+      });
+
+      const returnedLeaseId = response.data?.leaseId;
+      setLeaseId(returnedLeaseId);
       setState("signed");
-      
-      if (onSigned && leaseId) {
-        onSigned(leaseId);
+
+      if (onSigned && returnedLeaseId) {
+        onSigned(returnedLeaseId);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to sign lease");
       setState("failed-with-retry");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleVoidLease = async () => {
+    setIsVoiding(true);
+    setError(null);
+    try {
+      await voidLease(dealId);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to void lease");
+    } finally {
+      setIsVoiding(false);
     }
   };
 
@@ -501,14 +513,26 @@ export function LeaseESignature({
                 The lease terms have been modified since you loaded this document. 
                 Please refresh to review the latest version before signing.
               </p>
-              <Button
-                onClick={handleRetry}
-                className="border-2 border-foreground"
-                aria-label="Refresh document to view updated terms"
-              >
-                <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
-                Refresh Document
-              </Button>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  onClick={handleRetry}
+                  className="border-2 border-foreground"
+                  aria-label="Refresh document to view updated terms"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Refresh Document
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleVoidLease}
+                  disabled={isVoiding}
+                  className="border-2 border-destructive text-destructive"
+                  aria-label="Void the lease agreement"
+                >
+                  {isVoiding && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
+                  {isVoiding ? "Voiding…" : "Void lease"}
+                </Button>
+              </div>
             </div>
           )}
         </div>

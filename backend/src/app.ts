@@ -27,6 +27,7 @@ import { createAdminRouter } from "./routes/admin.js"
 import { createDealsRouter } from "./routes/deals.js"
 import { createWhistleblowerRouter } from "./routes/whistleblower.js"
 import { createStakingRouter } from "./routes/staking.js"
+import { createStakingDelegationRouter } from "./routes/stakingDelegation.js"
 import { createWebhooksRouter } from "./routes/webhooks.js"
 import { createDepositsRouter } from "./routes/deposits.js"
 import { EarningsServiceImpl } from "./services/earnings.js"
@@ -102,6 +103,7 @@ import { createAdminUnderwritingRouter } from "./routes/adminUnderwriting.js"
 import { PostgresRewardsDataLayer } from "./services/postgres-rewards-data-layer.js"
 import { createReceiptRepository, createTimelockRepository } from "./indexer/repositoryBootstrap.js"
 import { createLandlordPropertiesRouter } from "./routes/landlordProperties.js";
+import { createEpochRewardsRouter } from "./routes/epochRewards.js";
 import { createLandlordRouter } from "./routes/landlord.js";
 import { createAdminLandlordVerificationRouter, createLandlordVerificationRouter } from "./routes/landlordVerification.js";
 import { authenticateToken } from "./middleware/auth.js";
@@ -798,6 +800,13 @@ export function createApp() {
     app.use("/api/admin", createSettlementAdminRouter());
     app.use("/api", createContractEventsRouter());
     app.use("/api/config/feature-flags", createFeatureFlagsRouter());
+    // Mounted ahead of "/api/staking" so the delegation prefix wins; the
+    // stake_delegation contract is a separate ledger from staking_pool.
+    app.use(
+      "/api/staking/delegation",
+      requireFlag("STAKING_ENABLED"),
+      createStakingDelegationRouter(sorobanAdapter, walletService, linkedAddressStore),
+    );
     app.use(
       "/api/staking",
       requireFlag("STAKING_ENABLED"),
@@ -817,6 +826,7 @@ export function createApp() {
     app.use("/api/gas-metrics", createGasMetricsRouter());
     app.use("/api", createPropertyPhotosRouter());
     app.use("/api/landlord/properties", createLandlordPropertiesRouter());
+    app.use("/api/epoch-rewards", createEpochRewardsRouter());
     app.use(
       "/api/landlord/partner-applications",
       createPartnerLandlordApplicationsRouter(),
@@ -887,6 +897,11 @@ export function createApp() {
   app.use("/api/v1/config/feature-flags", createFeatureFlagsRouter());
 
 
+  app.use(
+    "/api/v1/staking/delegation",
+    requireFlag("STAKING_ENABLED"),
+    createStakingDelegationRouter(sorobanAdapter, walletService, linkedAddressStore),
+  );
   app.use(
     "/api/v1/staking",
     requireFlag("STAKING_ENABLED"),

@@ -9,6 +9,7 @@ import {
   RecordReceiptParams,
   TenantReputationRecord,
   OraclePriceReading,
+  DelegationRecord,
   CreateGovernanceProposalParams,
   GovernanceVoteParams,
   GovernanceProposal,
@@ -142,6 +143,105 @@ export class MetricsSorobanAdapter implements SorobanAdapter {
 
   async getBond(inspectorId: string): Promise<{ isBonded: boolean; amount: bigint }> {
     return this.trackCall('getBond', () => this.wrapped.getBond(inspectorId))
+  }
+
+  // ── stake_delegation (#1489) ───────────────────────────────────────────────
+  // MetricsSorobanAdapter is the outermost wrapper the routes actually hold, so
+  // optional methods have to be forwarded here or callers cannot see them.
+
+  async delegateStake?(delegator: string, delegatee: string, amount: bigint): Promise<string> {
+    if (!this.wrapped.delegateStake) {
+      throw new Error('delegateStake not implemented');
+    }
+    return this.trackCall('delegateStake', () =>
+      this.wrapped.delegateStake!(delegator, delegatee, amount),
+    );
+  }
+
+  async requestUndelegate?(delegator: string, delegatee: string, amount: bigint): Promise<string> {
+    if (!this.wrapped.requestUndelegate) {
+      throw new Error('requestUndelegate not implemented');
+    }
+    return this.trackCall('requestUndelegate', () =>
+      this.wrapped.requestUndelegate!(delegator, delegatee, amount),
+    );
+  }
+
+  async completeUndelegate?(delegator: string, delegatee: string): Promise<string> {
+    if (!this.wrapped.completeUndelegate) {
+      throw new Error('completeUndelegate not implemented');
+    }
+    return this.trackCall('completeUndelegate', () =>
+      this.wrapped.completeUndelegate!(delegator, delegatee),
+    );
+  }
+
+  async claimDelegateeRewards?(delegatee: string): Promise<string> {
+    if (!this.wrapped.claimDelegateeRewards) {
+      throw new Error('claimDelegateeRewards not implemented');
+    }
+    return this.trackCall('claimDelegateeRewards', () =>
+      this.wrapped.claimDelegateeRewards!(delegatee),
+    );
+  }
+
+  async setDelegateeCommission?(delegatee: string, rateBps: number): Promise<string> {
+    if (!this.wrapped.setDelegateeCommission) {
+      throw new Error('setDelegateeCommission not implemented');
+    }
+    return this.trackCall('setDelegateeCommission', () =>
+      this.wrapped.setDelegateeCommission!(delegatee, rateBps),
+    );
+  }
+
+  async claimDelegateeCommission?(delegatee: string): Promise<string> {
+    if (!this.wrapped.claimDelegateeCommission) {
+      throw new Error('claimDelegateeCommission not implemented');
+    }
+    return this.trackCall('claimDelegateeCommission', () =>
+      this.wrapped.claimDelegateeCommission!(delegatee),
+    );
+  }
+
+  async getDelegations?(delegator: string): Promise<DelegationRecord[]> {
+    if (!this.wrapped.getDelegations) {
+      throw new Error('getDelegations not implemented');
+    }
+    return this.trackCall('getDelegations', () => this.wrapped.getDelegations!(delegator));
+  }
+
+  async getDelegationStakedBalance?(account: string): Promise<bigint> {
+    if (!this.wrapped.getDelegationStakedBalance) {
+      throw new Error('getDelegationStakedBalance not implemented');
+    }
+    return this.trackCall('getDelegationStakedBalance', () =>
+      this.wrapped.getDelegationStakedBalance!(account),
+    );
+  }
+
+  async getDelegationEpoch?(): Promise<number> {
+    if (!this.wrapped.getDelegationEpoch) {
+      throw new Error('getDelegationEpoch not implemented');
+    }
+    return this.trackCall('getDelegationEpoch', () => this.wrapped.getDelegationEpoch!());
+  }
+
+  async getDelegateeClaimable?(delegatee: string): Promise<bigint> {
+    if (!this.wrapped.getDelegateeClaimable) {
+      throw new Error('getDelegateeClaimable not implemented');
+    }
+    return this.trackCall('getDelegateeClaimable', () =>
+      this.wrapped.getDelegateeClaimable!(delegatee),
+    );
+  }
+
+  async getDelegateeCommissionClaimable?(delegatee: string): Promise<bigint> {
+    if (!this.wrapped.getDelegateeCommissionClaimable) {
+      throw new Error('getDelegateeCommissionClaimable not implemented');
+    }
+    return this.trackCall('getDelegateeCommissionClaimable', () =>
+      this.wrapped.getDelegateeCommissionClaimable!(delegatee),
+    );
   }
 
   async getOraclePrice?(pair: string): Promise<OraclePriceReading> {

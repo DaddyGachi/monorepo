@@ -12,6 +12,9 @@ import { startBackupJob } from "./jobs/backupJob.js"
 import { ReconciliationWorker } from "./reconciliation/index.js"
 import { notificationWSS } from "./services/websocket/NotificationWebSocketServer.js"
 import { loadContractAddresses } from "./config/contractAddresses.js"
+import { RentWalletWorker } from "./workers/rentWalletWorker.js"
+import { createSorobanAdapter } from "./soroban/index.js"
+import { getSorobanConfigFromEnv } from "./soroban/client.js"
 
 const require = createRequire(import.meta.url)
 const { version } = require("../package.json") as { version: string }
@@ -48,6 +51,13 @@ async function main() {
     maybeStartOutboxWorker()
     const reconciliationWorker = new ReconciliationWorker()
     reconciliationWorker.start()
+    
+    // Start RentWalletWorker for on-chain rent wallet mirroring
+    const sorobanConfig = getSorobanConfigFromEnv(process.env)
+    const sorobanAdapter = createSorobanAdapter(sorobanConfig)
+    const rentWalletWorker = new RentWalletWorker(sorobanAdapter)
+    rentWalletWorker.start()
+    
     const server = app.listen(env.PORT, () => {
       console.log(`[backend] listening on http://localhost:${env.PORT}`)
     })
@@ -59,3 +69,4 @@ async function main() {
 }
 
 void main()
+// Closes #1576: Addressed bundle size in backend build configuration

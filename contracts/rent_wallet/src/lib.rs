@@ -536,7 +536,7 @@ mod test {
     extern crate std;
 
     use super::{validation, ContractError, DataKey, RentWallet, RentWalletClient};
-    use soroban_sdk::testutils::{Address as _, MockAuth, MockAuthInvoke};
+    use soroban_sdk::testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke};
     use soroban_sdk::{Address, BytesN, Env, IntoVal};
 
     fn setup(
@@ -1638,5 +1638,172 @@ mod test {
             assert!(balance >= 0, "negative balance at step {}", step);
             assert_eq!(balance, net_applied, "balance drift at step {}", step);
         }
+    }
+
+    // ============================================================================
+    // Guardian & Emergency Upgrade Tests (#XXXX)
+    // ============================================================================
+
+    #[test]
+    fn non_admin_cannot_set_guardian() {
+        let env = Env::default();
+        let (contract_id, client, _admin, _user, non_admin) = setup(&env);
+        let guardian = Address::generate(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &non_admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_guardian",
+                args: (non_admin.clone(), guardian.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let err = client
+            .try_set_guardian(&non_admin, &guardian)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ContractError::NotAuthorized);
+    }
+
+    #[test]
+    fn admin_can_set_guardian() {
+        let env = Env::default();
+        let (contract_id, client, admin, _user, _non_admin) = setup(&env);
+        let guardian = Address::generate(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_guardian",
+                args: (admin.clone(), guardian.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client.try_set_guardian(&admin, &guardian).unwrap().unwrap();
+    }
+
+    #[test]
+    fn non_admin_cannot_emergency_upgrade() {
+        let env = Env::default();
+        let (contract_id, client, _admin, _user, non_admin) = setup(&env);
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+
+        env.mock_auths(&[MockAuth {
+            address: &non_admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "emergency_upgrade",
+                args: (non_admin.clone(), hash.clone(), 2u32).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let err = client
+            .try_emergency_upgrade(&non_admin, &hash, &2u32)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ContractError::NotAuthorized);
+    }
+
+    #[test]
+    fn emergency_upgrade_with_guardian_requires_both_auths() {
+        let env = Env::default();
+        let (contract_id, client, admin, _user, _non_admin) = setup(&env);
+        let guardian = Address::generate(&env);
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+
+        // Set guardian
+        env.mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_guardian",
+                args: (admin.clone(), guardian.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client.try_set_guardian(&admin, &guardian).unwrap().unwrap();
+
+        // Emergency upgrade with only admin auth (no guardian) — should fail
+        env.mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "emergency_upgrade",
+                args: (admin.clone(), hash.clone(), 2u32).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let result = client.try_emergency_upgrade(&admin, &hash, &2u32);
+        // Should fail: guardian.require_auth() not met
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn execute_upgrade_with_guardian_requires_both_auths() {
+        let env = Env::default();
+        let (contract_id, client, admin, _user, _non_admin) = setup(&env);
+        let guardian = Address::generate(&env);
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+
+        // Set guardian
+        env.mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_guardian",
+                args: (admin.clone(), guardian.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client.try_set_guardian(&admin, &guardian).unwrap().unwrap();
+
+        // Set a small delay
+        env.mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_upgrade_delay",
+                args: (admin.clone(), 1u64).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client
+            .try_set_upgrade_delay(&admin, &1u64)
+            .unwrap()
+            .unwrap();
+
+        // Propose upgrade
+        env.mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "propose_upgrade",
+                args: (admin.clone(), hash.clone(), 2u32).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client
+            .try_propose_upgrade(&admin, &hash, &2u32)
+            .unwrap()
+            .unwrap();
+
+        // Advance time past delay
+        env.ledger().set_timestamp(env.ledger().timestamp() + 2);
+
+        // Try execute with only admin auth (no guardian) — should fail
+        env.mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "execute_upgrade",
+                args: (admin.clone(), hash.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let result = client.try_execute_upgrade(&admin, &hash);
+        // Should fail: guardian.require_auth() not met
+        assert!(result.is_err());
     }
 }

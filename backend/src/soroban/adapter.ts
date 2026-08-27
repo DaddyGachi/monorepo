@@ -15,6 +15,9 @@ export interface RecordReceiptParams {
   fxRate?: number
   fxProvider?: string
   metadataHash?: string
+  // New fields for transaction-receipt-contract
+  externalRefSource?: string  // e.g., "paystack", "stellar", "manual"
+  externalRef?: string        // External payment reference string
 }
 
 export type DealSyncStatus = 'active' | 'completed' | 'defaulted'
@@ -189,16 +192,122 @@ export interface TenantReputationRecord {
   lastUpdated: bigint
 }
 
+/**
+ * A single delegation row from stake_delegation's `get_delegations`, mirroring
+ * the contract's `Delegation` struct.
+ *
+ * `amount` is in stake_delegation's own units (USDC, 6 decimals). Note that
+ * stake_delegation keeps a *separate* stake ledger from staking_pool — see
+ * `DelegationPosition` — so this amount is never a slice of the staking_pool
+ * position surfaced by `getStakedBalance`.
+ */
+export interface DelegationRecord {
+  delegatee: string
+  amount: bigint
+  activatedEpoch: number
+}
+
+/**
+ * A delegator's full position inside stake_delegation. `staked` is the balance
+ * held by stake_delegation itself (`staked_balance`), NOT the staking_pool
+ * position; `delegated` is the part of it currently routed to delegatees and
+ * `free` is the remainder the contract will let the user delegate or unstake.
+ */
+export interface DelegationPosition {
+  staked: bigint
+  delegated: bigint
+  free: bigint
+  currentEpoch: number
+  delegations: DelegationRecord[]
+}
+
+/**
+ * What a delegatee has earned: net rewards after their commission split, plus
+ * the commission itself. The contract exposes no getter for the configured
+ * commission *rate*, so only the two balances are readable off-chain.
+ */
+export interface DelegateeEarnings {
+  claimable: bigint
+  commissionClaimable: bigint
+}
+
+/**
+ * On-chain receipt from transaction-receipt-contract.
+ * Mirrors the contract's Receipt struct.
+ */
+export interface OnChainReceipt {
+  tx_id: string           // BytesN<32> as hex string
+  tx_type: string         // Symbol
+  amount_usdc: string     // i128 as decimal string
+  token: string           // Address
+  deal_id: string
+  listing_id?: string
+  from?: string
+  to?: string
+  external_ref: string    // BytesN<32> as hex string
+  amount_ngn?: string     // i128 as decimal string
+  fx_rate_ngn_per_usdc?: string  // i128 as decimal string
+  fx_provider?: string
+  metadata_hash?: string  // BytesN<32> as hex string
+  timestamp: number       // u64
+}
+
+/**
+ * Allowlist entry from allowlist_registry contract.
+ * Mirrors the contract's Entry struct.
+ */
+export interface AllowlistEntry {
+  label: string           // Human-readable label (role, tier, etc.)
+  expires_at: number      // Unix timestamp (seconds) after which entry is expired. 0 means no expiry.
+  added_at: number        // Ledger sequence number when entry was added
+}
+
+/**
+ * Epoch info from epoch_rewards contract.
+ * Mirrors the contract's EpochInfo struct.
+ */
+export interface EpochInfo {
+  epoch_number: number
+  start_ts: number
+  duration_secs: number
+  end_ts: number
+  seal_ts: number
+  sealed: boolean
+  total_rewards: bigint
+  carried_forward: bigint
+  reward_index_at_seal: bigint
+  dust: bigint
+  total_claimable_at_seal: bigint
+}
+
 export interface SorobanAdapter {
   getBalance(account: string): Promise<bigint>
   credit(account: string, amount: bigint): Promise<void>
   debit(account: string, amount: bigint): Promise<void>
   getStakedBalance(account: string): Promise<bigint>
   getClaimableRewards(account: string): Promise<bigint>
+  // MVP staking pool (#1493), additive to the legacy staking pair.
+  stake?(account: string, amount: bigint): Promise<string>
+  unstake?(account: string, amount: bigint): Promise<string>
+  mvpStakedBalance?(account: string): Promise<bigint>
+  usedStake?(account: string): Promise<bigint>
+  unusedStake?(account: string): Promise<bigint>
+  utilizeStake?(user: string, amount: bigint): Promise<string>
+  claimable?(account: string): Promise<bigint>
+  claim?(account: string): Promise<string>
   recordReceipt(params: RecordReceiptParams, hooks?: TxBroadcastHooks): Promise<void>
   getConfig(): SorobanConfig
   getReceiptEvents(fromLedger: number | null): Promise<RawReceiptEvent[]>
   getTimelockEvents(fromLedger: number | null): Promise<any[]>
+  // Direct query methods for transaction-receipt-contract
+  getReceiptById?(txId: string): Promise<OnChainReceipt | null>
+  listReceiptsByDeal?(dealId: string, limit: number, cursor?: number): Promise<OnChainReceipt[]>
+  listReceiptsByUser?(userAddress: string, limit: number, cursor?: number): Promise<OnChainReceipt[]>
+  // Allowlist registry methods
+  addToAllowlist?(address: string, label: string, expiresAt?: number): Promise<string>
+  removeFromAllowlist?(address: string): Promise<string>
+  isAllowlisted?(address: string): Promise<boolean>
+  getAllowlistEntry?(address: string): Promise<AllowlistEntry | null>
   executeTimelock(txHash: string, target: string, functionName: string, args: any[], eta: number): Promise<string>
   cancelTimelock(txHash: string): Promise<string>
 
@@ -242,9 +351,52 @@ export interface SorobanAdapter {
   completeRentToOwnDeal?(params: RentToOwnDealActionParams): Promise<void>
   defaultRentToOwnDeal?(params: RentToOwnDealActionParams): Promise<void>
 
+  // stake_delegation contract (#1489) — a standalone delegated-staking ledger,
+  // disjoint from staking_pool/staking_rewards. See real-adapter.ts for the
+  // signer-model caveat on the write methods.
+  delegateStake?(delegator: string, delegatee: string, amount: bigint): Promise<string>
+  requestUndelegate?(delegator: string, delegatee: string, amount: bigint): Promise<string>
+  completeUndelegate?(delegator: string, delegatee: string): Promise<string>
+  claimDelegateeRewards?(delegatee: string): Promise<string>
+  setDelegateeCommission?(delegatee: string, rateBps: number): Promise<string>
+  claimDelegateeCommission?(delegatee: string): Promise<string>
+  getDelegations?(delegator: string): Promise<DelegationRecord[]>
+  getDelegationStakedBalance?(account: string): Promise<bigint>
+  getDelegationEpoch?(): Promise<number>
+  getDelegateeClaimable?(delegatee: string): Promise<bigint>
+  getDelegateeCommissionClaimable?(delegatee: string): Promise<bigint>
+
   // oracle_price_feeds contract — read-only price queries (issue #1488)
   getOraclePrice?(pair: string): Promise<OraclePriceReading>
   isOraclePriceStale?(pair: string): Promise<boolean>
+
+  // epoch_rewards contract — epoch-based staking rewards
+  epochStake?(user: string, amount: bigint): Promise<string>
+  epochUnstake?(user: string, amount: bigint): Promise<string>
+  epochClaim?(user: string): Promise<bigint>
+  epochGetClaimable?(user: string): Promise<bigint>
+  epochGetEpoch?(epochNumber: number): Promise<EpochInfo | null>
+  epochGetCurrentEpoch?(): Promise<number>
+  epochGetTotalStaked?(): Promise<bigint>
+  epochFundRewards?(caller: string, amount: bigint): Promise<string>
+  epochSeal?(caller: string, targetEpoch: number, nextEpochDurationSecs: number): Promise<string>
+
+  // rent_wallet contract — custodial ledger for tenant rent balances
+  rentWalletCredit?(account: string, amount: bigint): Promise<string>
+  rentWalletDebit?(account: string, amount: bigint): Promise<string>
+  rentWalletBalance?(account: string): Promise<bigint>
+
+  // slashing_module contract — evidence-based slashing system
+  submitEvidence?(submitter: string, commitment: string, actor: string, offence: string): Promise<number>
+  revealEvidence?(submitter: string, slashId: number, evidence: string, salt: string): Promise<void>
+  proposeSlash?(submitter: string, actor: string, penaltyBps: number): Promise<number>
+  finalizeSlash?(caller: string, slashId: number): Promise<void>
+  cancelSlash?(admin: string, slashId: number): Promise<void>
+
+  // bond_collateral contract — inspector bond management
+  depositBond?(inspector: string, amount: bigint): Promise<void>
+  withdrawBond?(inspector: string, amount: bigint): Promise<void>
+  getBondBalance?(inspector: string): Promise<bigint>
 
   // ── governance contract — stake-weighted parameter voting (issue #1494) ────
   //

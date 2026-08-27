@@ -1,17 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Search, SlidersHorizontal, SearchX, X, Map, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  PropertyCard,
-  propertyListingToCard,
-} from "@/components/property-card";
 import { PropertyCardSkeleton } from "@/components/property-card-skeleton";
+import { VirtualizedPropertyList } from "@/components/virtualized-property-list";
 import { EmptyState, LoadingState } from "@/components/ui/data-state";
 import useAuthStore from "@/store/useAuthStore";
 import {
@@ -57,22 +54,29 @@ function PropertiesContent() {
   const compareIds = parseCompareIds(searchParams.get("ids"));
   const canCompareProperties = canCompare(compareIds);
 
+  const scrollTopRef = useRef(0);
+  const [initialScrollTop, setInitialScrollTop] = useState(0);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const saved = sessionStorage.getItem('properties_scroll_y');
+    const saved = sessionStorage.getItem('properties_scroll_top');
     if (saved) {
       const y = parseInt(saved, 10);
       if (!isNaN(y)) {
-        requestAnimationFrame(() => window.scrollTo(0, y));
+        requestAnimationFrame(() => setInitialScrollTop(y));
       }
-      sessionStorage.removeItem('properties_scroll_y');
     }
+    sessionStorage.removeItem('properties_scroll_top');
+  }, []);
+
+  const handleScrollTopChange = useCallback((y: number) => {
+    scrollTopRef.current = y;
   }, []);
 
   useEffect(() => {
     return () => {
       if (typeof window !== 'undefined') {
-        sessionStorage.setItem('properties_scroll_y', String(window.scrollY));
+        sessionStorage.setItem('properties_scroll_top', String(scrollTopRef.current));
       }
     };
   }, []);
@@ -212,6 +216,14 @@ function PropertiesContent() {
         : prev.filter((id) => id !== listingId),
     );
   };
+
+  const handleSaveToggle = useCallback(
+    (listingId: string) => {
+      const saved = !savedListingIds.includes(listingId);
+      return handleFavoriteChange(listingId, saved);
+    },
+    [savedListingIds],
+  );
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("en-NG", {
@@ -591,18 +603,16 @@ function PropertiesContent() {
             />
           ) : (
             <>
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {properties.map((property) => (
-                  <PropertyCard
-                    key={property.listingId}
-                    property={propertyListingToCard(property)}
-                    isFavorited={savedListingIds.includes(property.listingId)}
-                    onFavoriteChange={(saved) =>
-                      handleFavoriteChange(property.listingId, saved)
-                    }
-                    showCompare={true}
-                  />
-                ))}
+              <div className="h-[660px]">
+                <VirtualizedPropertyList
+                  properties={properties}
+                  savedListingIds={savedListingIds}
+                  onSaveToggle={handleSaveToggle}
+                  isLoading={false}
+                  showCompare={true}
+                  initialScrollTop={initialScrollTop}
+                  onScrollTopChange={handleScrollTopChange}
+                />
               </div>
 
               {/* Pagination */}

@@ -1,8 +1,9 @@
 "use client";
 
 import {
-  claimRewards,
   getStakingPosition,
+  getMvpStakingPosition,
+  MvpStakingPositionResponse,
   stakeTokens,
   StakingPositionReponse,
   unstakeTokens,
@@ -22,6 +23,8 @@ import { UnstakeModal } from "./unstake-modal";
 import { PositionCard, formatUsdc } from "./PositionCard";
 import { StakeForm } from "./StakeForm";
 import { HistoryTable } from "./HistoryTable";
+import { DelegationPanel } from "./DelegationPanel";
+import { StakingClaimFlow } from "./StakingClaimFlow";
 import { stellarWallet } from "@/lib/stellar-wallet";
 import { walletAuthManager } from "@/lib/wallet-auth";
 import { useCountdown } from "@/hooks/useCountdown";
@@ -32,14 +35,15 @@ export default function StakingPage() {
   const { isFrozen, freezeReason } = useRiskState();
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [stakingPosition, setStakingPosition] = useState<StakingPositionReponse | null>(null);
+  const [mvpPosition, setMvpPosition] = useState<MvpStakingPositionResponse | null>(null);
   const [ngnBalance, setNgnBalance] = useState<NgnBalanceResponse | null>(null);
   const [stakingMode, setStakingMode] = useState<StakingMode>("ngn_balance");
   const [stakeAmount, setStakeAmount] = useState("");
   const [status, setStatus] = useState("");
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [isStaking, setIsStaking] = useState(false);
-  const [isClaiming, setIsClaiming] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isClaimFlowOpen, setIsClaimFlowOpen] = useState(false);
 
   // NGN Deposit flow state
   const [ngnDepositAmount, setNgnDepositAmount] = useState("");
@@ -75,6 +79,9 @@ export default function StakingPage() {
       .catch((err: Error) => {
         console.error("Failed to fetch staking position", err);
       });
+    getMvpStakingPosition(walletAddress)
+      .then((data) => setMvpPosition(data))
+      .catch((err: Error) => console.error("Failed to fetch MVP staking position", err));
   }, [walletAddress]);
 
   useEffect(() => {
@@ -103,6 +110,7 @@ export default function StakingPage() {
       
       const pos = await getStakingPosition(walletInfo.publicKey);
       setStakingPosition(pos);
+      setMvpPosition(await getMvpStakingPosition(walletInfo.publicKey));
     } catch (err: any) {
       setStatus(err.message || "Failed to connect Stellar wallet");
       handleError(err, "Failed to connect Stellar wallet");
@@ -169,6 +177,7 @@ export default function StakingPage() {
 
         const updatedPosition = await getStakingPosition(walletAddress);
         setStakingPosition(updatedPosition);
+        setMvpPosition(await getMvpStakingPosition(walletAddress));
         setStakeAmount("");
       }
     } catch (err: any) {
@@ -208,27 +217,14 @@ export default function StakingPage() {
     }
   };
 
-  const handleClaim = async () => {
-    setIsClaiming(true);
-    setStatus("Claiming rewards...");
-    try {
-      const res = await claimRewards(walletAddress);
-
-      if (res.status === "CONFIRMED") {
-        setStatus("Rewards claimed");
-      } else {
-        setStatus("Claim queued for retry");
-      }
-
-      const updatedPosition = await getStakingPosition(walletAddress);
-      setStakingPosition(updatedPosition);
-
-    } catch (err: any) {
-      setStatus(err.message || "Claim failed");
-      handleError(err, "Claim failed");
-    } finally {
-      setIsClaiming(false);
-    }
+  const handleClaimFlowClose = () => {
+    setIsClaimFlowOpen(false);
+    // The flow may have just claimed rewards on-chain — refresh the position
+    // whether it did or not, so the claimable balance reflects reality.
+    if (!walletAddress) return;
+    getStakingPosition(walletAddress)
+      .then((data) => setStakingPosition(data))
+      .catch((err: Error) => console.error("Failed to refresh staking position", err));
   };
 
   const handleGetQuote = async () => {
@@ -347,8 +343,38 @@ export default function StakingPage() {
         /* STAKING DASHBOARD BODY (AUTHORIZED STATE) */
         <div className="space-y-6">
           
-          {/* Hero Stats */}
-          <PositionCard position={stakingPosition?.position || null} />
+          {/* Hero Stats — the directly staked staking_pool position. Delegated
+              stake lives in a separate contract and is shown on its own below. */}
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Directly staked position
+            </p>
+            <PositionCard position={stakingPosition?.position || null} />
+          </div>
+
+          <DelegationPanel walletAddress={walletAddress} />
+
+          <Card className="border-2 border-foreground/10 bg-card shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-bold">MVP pool utilization</CardTitle>
+              <CardDescription className="text-xs">
+                Experimental pool balance, including stake reserved by an authorized protocol consumer.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                ["Total staked", mvpPosition?.position.staked],
+                ["Used", mvpPosition?.position.used],
+                ["Unused", mvpPosition?.position.unused],
+                ["Claimable", mvpPosition?.position.claimable],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-foreground/10 bg-muted/20 p-3">
+                  <div className="text-[10px] font-bold uppercase text-muted-foreground">{label}</div>
+                  <div className="mt-1 font-mono text-sm font-black">{value ?? "0.000000"} USDC</div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
 
           {/* Action grid (Stake / Unstake / Claim) */}
           <div className="grid gap-6 md:grid-cols-12">
@@ -455,18 +481,11 @@ export default function StakingPage() {
                   </div>
 
                   <Button
-                    onClick={handleClaim}
-                    disabled={isClaiming || !stakingPosition || Number(stakingPosition.position.claimable) <= 0}
+                    onClick={() => setIsClaimFlowOpen(true)}
+                    disabled={!stakingPosition || Number(stakingPosition.position.claimable) <= 0}
                     className="w-full h-10 border-2 border-primary bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-sm hover:shadow transition-all disabled:opacity-50"
                   >
-                    {isClaiming ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Claiming yield...
-                      </>
-                    ) : (
-                      "Claim accrued yield"
-                    )}
+                    Claim accrued yield
                   </Button>
                 </CardContent>
               </Card>
@@ -482,6 +501,12 @@ export default function StakingPage() {
             onConfirm={handleUnstake}
             maxAmount={stakingPosition ? Number(stakingPosition.position.staked).toFixed(6) : "0.000000"}
             warmingAmount={stakingPosition ? Number(stakingPosition.position.warming).toFixed(6) : "0.000000"}
+          />
+
+          <StakingClaimFlow
+            isOpen={isClaimFlowOpen}
+            onClose={handleClaimFlowClose}
+            rewardAmount={stakingPosition ? Number(stakingPosition.position.claimable) : 0}
           />
         </div>
       )}
