@@ -140,7 +140,7 @@ export const envSchema = z.object({
     if (data.NODE_ENV !== 'production') return true
     return !!data.MANUAL_ADMIN_SECRET
   }, {
-    message: 'MANUAL_ADMIN_SECRET is required in production for webhook signature validation',
+    message: 'MANUAL_ADMIN_SECRET is required in production to guard legacy shared-secret admin routes',
     path: ['MANUAL_ADMIN_SECRET'],
   })
   .refine((data) => {

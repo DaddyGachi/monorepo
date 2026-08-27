@@ -79,6 +79,7 @@ import { setDbPoolMetricsCallback, setSorobanCircuitBreakerCallback, shutdownMet
 import { metricsMiddleware } from './middleware/metricsMiddleware.js';
 import { JobScheduler, initJobStore, PostgresJobStore } from "./jobs/scheduler/index.js"
 import { createAdminJobsRouter } from "./routes/adminJobs.js"
+import { createAdminQuotaRouter } from "./routes/adminQuota.js"
 import { getNotificationService } from "./notifications/index.js"
 import { createWebhookReplayRouter } from "./routes/webhookReplay.js"
 import { PostgresWebhookReplayStore, initWebhookReplayStore as initStore } from "./webhookReplay/index.js"
@@ -707,6 +708,7 @@ export function createApp() {
   app.use('/api/v1/admin/reconciliation', createAdminReconciliationRouter(ngnWalletService))
   app.use('/api/v1/admin/secrets', createSecretRotationRouter())
   app.use('/api/v1/admin/jobs', createAdminJobsRouter())
+  app.use('/api/v1/admin/quota', createAdminQuotaRouter())
   app.use('/api/v1/admin/webhook-replay', createWebhookReplayRouter())
   app.use('/api/v1/deals', createDealsRouter())
   app.use('/api/v1/whistleblower', createWhistleblowerRouter(earningsService))
@@ -743,6 +745,7 @@ export function createApp() {
     app.use('/api/admin/reconciliation', createAdminReconciliationRouter(ngnWalletService))
     app.use('/api/admin/secrets', createSecretRotationRouter())
     app.use('/api/admin/jobs', createAdminJobsRouter())
+    app.use('/api/admin/quota', createAdminQuotaRouter())
     app.use('/api/admin/webhook-replay', createWebhookReplayRouter())
     app.use('/api', createContractEventsRouter())
     app.use('/api/deals', createDealsRouter())
@@ -784,6 +787,7 @@ export function createApp() {
     app.use("/api/admin/sessions", createAdminSessionsRouter());
     app.use("/api/admin/secrets", createSecretRotationRouter());
     app.use("/api/admin/jobs", createAdminJobsRouter());
+    app.use("/api/admin/quota", createAdminQuotaRouter());
     app.use("/api/admin/fraud", createAdminFraudRouter());
     app.use("/api/admin/outbox", createAdminOutboxRouter(sorobanAdapter));
     app.use("/api/admin", createAdminAuditRouter());
@@ -878,6 +882,7 @@ export function createApp() {
   app.use("/api/v1/admin/sessions", createAdminSessionsRouter());
   app.use("/api/v1/admin/secrets", createSecretRotationRouter());
   app.use("/api/v1/admin/jobs", createAdminJobsRouter());
+  app.use("/api/v1/admin/quota", createAdminQuotaRouter());
   app.use("/api/v1/admin/fraud", createAdminFraudRouter());
   app.use("/api/v1/admin/outbox", createAdminOutboxRouter(sorobanAdapter));
   app.use("/api/v1/admin", createAdminAuditRouter());

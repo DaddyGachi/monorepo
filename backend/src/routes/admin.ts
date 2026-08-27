@@ -26,6 +26,10 @@ import {
 import { AppError, notFound } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { validate } from "../middleware/validate.js";
+import {
+  assertAdminSecret,
+  requireAdminSecret,
+} from "../middleware/adminSecret.js";
 import { markRewardPaidSchema } from "../schemas/reward.js";
 import {
   adminListingFiltersSchema,
@@ -52,14 +56,6 @@ export function createAdminRouter(
 ) {
   const router = Router();
   const sender = new OutboxSender(adapter);
-
-  // Admin auth guard helper
-  function requireAdminSecret(req: Request) {
-    const headerSecret = req.headers["x-admin-secret"];
-    if (env.MANUAL_ADMIN_SECRET && headerSecret !== env.MANUAL_ADMIN_SECRET) {
-      throw new AppError(ErrorCode.FORBIDDEN, 403, "Invalid admin secret");
-    }
-  }
 
   /**
    * GET /api/admin/flags
@@ -95,13 +91,7 @@ export function createAdminRouter(
           );
         }
 
-        const headerSecret = req.headers["x-admin-secret"];
-        if (
-          env.MANUAL_ADMIN_SECRET &&
-          headerSecret !== env.MANUAL_ADMIN_SECRET
-        ) {
-          throw new AppError(ErrorCode.FORBIDDEN, 403, "Invalid admin secret");
-        }
+        assertAdminSecret(req);
 
         const fromKeyId =
           typeof req.body.fromKeyId === "string"
@@ -882,7 +872,7 @@ export function createAdminRouter(
     "/indexer/metrics",
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        requireAdminSecret(req);
+        assertAdminSecret(req);
 
         if (!indexer) {
           throw new AppError(
@@ -917,7 +907,7 @@ export function createAdminRouter(
     "/indexer/pause",
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        requireAdminSecret(req);
+        assertAdminSecret(req);
 
         if (!indexer) {
           throw new AppError(
@@ -966,7 +956,7 @@ export function createAdminRouter(
     "/indexer/resume",
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        requireAdminSecret(req);
+        assertAdminSecret(req);
 
         if (!indexer) {
           throw new AppError(
