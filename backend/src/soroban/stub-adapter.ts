@@ -12,16 +12,42 @@ import {
      RecordRentToOwnEquityPaymentParams,
      RentToOwnDealActionParams,
      OraclePriceReading,
+     CreateGovernanceProposalParams,
+     GovernanceVoteParams,
+     GovernanceProposal,
+     UnsignedTransaction,
 } from './adapter.js'
 import { SorobanConfig } from './client.js'
 import { RawReceiptEvent } from '../indexer/event-parser.js'
 import { logger } from '../utils/logger.js'
 
+/**
+ * Governance constants mirrored from contracts/governance/src/lib.rs:8-14 so
+ * the stub's create → vote → finalize → execute transitions line up with the
+ * on-chain ones. This is a test double, not a reimplementation of the contract.
+ */
+const MIN_STAKE_TO_PROPOSE = 1n
+const VOTING_PERIOD_SECS = 7 * 24 * 3600
+const TIMELOCK_SECS = 48 * 3600
+const QUORUM_BPS = 1_000n
+
+/** Stub-only view of the on-chain state a proposal accumulates. */
+interface StubGovernanceProposal extends GovernanceProposal {
+     /** Addresses that have already voted, mirroring DataKey::Voted. */
+     voters: Set<string>
+}
 
 export class StubSorobanAdapter implements SorobanAdapter {
      private static stubBalances = new Map<string, bigint>()
      private static stubBonds = new Map<string, bigint>()
      private static stubReputations = new Map<string, TenantReputationRecord>()
+     private static stubProposals = new Map<number, StubGovernanceProposal>()
+     private static stubProposalCount = 0
+     /**
+      * Stub stand-in for the contract's admin-mirrored DataKey::TotalStaked,
+      * snapshotted into each proposal at creation time for quorum purposes.
+      */
+     private static stubTotalStaked = 1_000n
      private config: SorobanConfig
 
      constructor(config: SorobanConfig) {
@@ -40,7 +66,10 @@ export class StubSorobanAdapter implements SorobanAdapter {
           this.stubBalances.clear()
           this.stubBonds.clear()
           this.stubReputations.clear()
-          logger.debug('Soroban stub: static reset complete (balances, bonds, and reputations cleared)')
+          this.stubProposals.clear()
+          this.stubProposalCount = 0
+          this.clockOffsetSecs = 0
+          logger.debug('Soroban stub: static reset complete (balances, bonds, reputations, and proposals cleared)')
      }
 
      /**
@@ -300,5 +329,170 @@ async requestRentRelease(params: RequestRentReleaseParams): Promise<void> {
      async isOraclePriceStale(pair: string): Promise<boolean> {
           logger.debug('Soroban stub: isOraclePriceStale', { pair })
           return false
+     }
+
+     // ── governance contract (issue #1494) ─────────────────────────────────────
+     //
+     // The real flow is prepare (unsigned XDR) → wallet signs → submit. The stub
+     // has no network and no wallet, so `xdr` here is a base64 JSON intent that
+     // `submitGovernanceTransaction` decodes and applies. Signing is a no-op, so
+     // tests can post the prepared string straight back to submit.
+
+     /** Test-only clock offset (seconds) so tests can cross voting/timelock boundaries. */
+     private static clockOffsetSecs = 0
+
+     public static _testOnlyAdvanceTime(seconds: number): void {
+          this.clockOffsetSecs += seconds
+     }
+
+     private static now(): number {
+          return Math.floor(Date.now() / 1000) + this.clockOffsetSecs
+     }
+
+     private static encodeIntent(intent: Record<string, unknown>): string {
+          return Buffer.from(JSON.stringify(intent), 'utf8').toString('base64')
+     }
+
+     async createProposal(params: CreateGovernanceProposalParams): Promise<UnsignedTransaction> {
+          logger.debug('Soroban stub: createProposal (prepare)', {
+               proposer: params.proposer,
+               paramKey: params.paramKey,
+          })
+          return {
+               xdr: StubSorobanAdapter.encodeIntent({
+                    kind: 'create_proposal',
+                    proposer: params.proposer,
+                    paramKey: params.paramKey,
+                    currentValue: params.currentValue.toString(),
+                    proposedValue: params.proposedValue.toString(),
+               }),
+          }
+     }
+
+     async vote(params: GovernanceVoteParams): Promise<UnsignedTransaction> {
+          logger.debug('Soroban stub: vote (prepare)', {
+               voter: params.voter,
+               proposalId: params.proposalId,
+               support: params.support,
+          })
+          return {
+               xdr: StubSorobanAdapter.encodeIntent({
+                    kind: 'vote',
+                    voter: params.voter,
+                    proposalId: params.proposalId,
+                    support: params.support,
+               }),
+          }
+     }
+
+     async submitGovernanceTransaction(signedXdr: string): Promise<{ txHash: string }> {
+          let intent: any
+          try {
+               intent = JSON.parse(Buffer.from(signedXdr, 'base64').toString('utf8'))
+          } catch {
+               throw new Error('Signed transaction envelope could not be parsed')
+          }
+
+          if (intent?.kind === 'create_proposal') {
+               const stake = await this.getStakedBalance(intent.proposer)
+               if (stake < MIN_STAKE_TO_PROPOSE) {
+                    throw new Error('InsufficientStake: proposer stake is below MIN_STAKE_TO_PROPOSE')
+               }
+               const id = ++StubSorobanAdapter.stubProposalCount
+               const now = StubSorobanAdapter.now()
+               StubSorobanAdapter.stubProposals.set(id, {
+                    id,
+                    proposer: intent.proposer,
+                    paramKey: intent.paramKey,
+                    currentValue: String(intent.currentValue),
+                    proposedValue: String(intent.proposedValue),
+                    votesFor: '0',
+                    votesAgainst: '0',
+                    status: 'Active',
+                    createdAt: now,
+                    votingEndsAt: now + VOTING_PERIOD_SECS,
+                    snapshottedTotalStaked: StubSorobanAdapter.stubTotalStaked.toString(),
+                    voters: new Set<string>(),
+               })
+               logger.debug('Soroban stub: createProposal (submitted)', { proposalId: id })
+               return { txHash: `stub_tx_create_proposal_${id}` }
+          }
+
+          if (intent?.kind === 'vote') {
+               const proposal = StubSorobanAdapter.stubProposals.get(Number(intent.proposalId))
+               if (!proposal) throw new Error('ProposalNotFound')
+               if (proposal.status !== 'Active') throw new Error('ProposalNotActive')
+               if (StubSorobanAdapter.now() > proposal.votingEndsAt) {
+                    throw new Error('VotingNotEnded: the voting period has already closed')
+               }
+               if (proposal.voters.has(intent.voter)) throw new Error('AlreadyVoted')
+
+               // Weight = the voter's stake, snapshotted on their first vote —
+               // matching contracts/governance/src/lib.rs:250-256.
+               const weight = await this.getStakedBalance(intent.voter)
+               proposal.voters.add(intent.voter)
+               if (intent.support) {
+                    proposal.votesFor = (BigInt(proposal.votesFor) + weight).toString()
+               } else {
+                    proposal.votesAgainst = (BigInt(proposal.votesAgainst) + weight).toString()
+               }
+               logger.debug('Soroban stub: vote (submitted)', {
+                    proposalId: proposal.id,
+                    support: intent.support,
+                    weight: weight.toString(),
+               })
+               return { txHash: `stub_tx_vote_${proposal.id}` }
+          }
+
+          throw new Error(`Unsupported governance intent: ${String(intent?.kind)}`)
+     }
+
+     async finalizeProposal(proposalId: number): Promise<string> {
+          const proposal = StubSorobanAdapter.stubProposals.get(proposalId)
+          if (!proposal) throw new Error('ProposalNotFound')
+          if (proposal.status !== 'Active') throw new Error('ProposalNotActive')
+          if (StubSorobanAdapter.now() <= proposal.votingEndsAt) {
+               throw new Error('VotingNotEnded: the voting period has not ended yet')
+          }
+
+          const totalVotes = BigInt(proposal.votesFor) + BigInt(proposal.votesAgainst)
+          const quorumRequired =
+               (BigInt(proposal.snapshottedTotalStaked) * QUORUM_BPS) / 10_000n
+          proposal.status =
+               totalVotes < quorumRequired
+                    ? 'Rejected'
+                    : BigInt(proposal.votesFor) > BigInt(proposal.votesAgainst)
+                      ? 'Passed'
+                      : 'Rejected'
+
+          logger.debug('Soroban stub: finalizeProposal', {
+               proposalId,
+               status: proposal.status,
+          })
+          return `stub_tx_finalize_proposal_${proposalId}`
+     }
+
+     async executeProposal(proposalId: number): Promise<string> {
+          const proposal = StubSorobanAdapter.stubProposals.get(proposalId)
+          if (!proposal) throw new Error('ProposalNotFound')
+          if (proposal.status === 'Executed') throw new Error('ProposalAlreadyExecuted')
+          if (proposal.status !== 'Passed') throw new Error('ProposalNotPassed')
+          if (StubSorobanAdapter.now() < proposal.votingEndsAt + TIMELOCK_SECS) {
+               throw new Error('TimelockNotElapsed: the execution timelock has not elapsed yet')
+          }
+          proposal.status = 'Executed'
+          logger.debug('Soroban stub: executeProposal', { proposalId })
+          return `stub_tx_execute_proposal_${proposalId}`
+     }
+
+     async getProposal(proposalId: number): Promise<GovernanceProposal | null> {
+          const proposal = StubSorobanAdapter.stubProposals.get(proposalId)
+          if (!proposal) return null
+          const { voters: _voters, ...view } = proposal
+          return { ...view }
+     }
+
+     async getProposalCount(): Promise<number> {
+          return StubSorobanAdapter.stubProposalCount
      }
 }

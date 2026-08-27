@@ -161,6 +161,7 @@ import { createAdminRolesRouter } from "./routes/adminRoles.js";
 import { createAbuseRouter } from "./routes/abuse.js";
 import { createInspectorJobsRouter, createAdminInspectorJobsRouter } from "./routes/inspectorJobs.js";
 import { createPropertyInspectionsRouter } from "./routes/propertyInspections.js";
+import { createGovernanceRouter } from "./routes/governance.js";
 import { createRentGuaranteeRouter } from "./routes/rentGuarantee.js";
 import { createTenantRatingCardRouter } from "./routes/tenantRatingCard.js";
 import { createRentGuaranteeProviderFromEnv } from "./services/insurance/rentGuaranteeProviderFactory.js";
@@ -959,6 +960,10 @@ export function createApp() {
 
   // Tenant rating card routes
   app.use('/api/v1', createTenantRatingCardRouter(sorobanAdapter))
+
+  // Stake-weighted governance proposal/voting routes — gated by GOVERNANCE_ENABLED flag.
+  // Distinct from the timelock admin queue (admin-timelock.js); see contracts/governance.
+  app.use('/api/v1/governance', authenticateToken, requireFlag('GOVERNANCE_ENABLED'), createGovernanceRouter(sorobanAdapter, linkedAddressStore))
 
   // Interactive API documentation
   app.use("/api/v1/messaging", createMessagingRouter());

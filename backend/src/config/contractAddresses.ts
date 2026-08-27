@@ -14,6 +14,10 @@ export const CONTRACT_ENV_VARS = {
   usdcToken: 'SOROBAN_USDC_TOKEN_ID',
   rentToOwn: 'SOROBAN_RENT_TO_OWN_ID',
   oraclePriceFeeds: 'SOROBAN_ORACLE_PRICE_FEEDS_ID',
+  // Stake-weighted parameter governance (contracts/governance). Distinct from
+  // `timelock` above — the timelock contract merely uses "governance" as its
+  // event-topic namespace and is an unrelated feature.
+  governance: 'SOROBAN_GOVERNANCE_ID',
 } as const
 
 export type ContractName = keyof typeof CONTRACT_ENV_VARS

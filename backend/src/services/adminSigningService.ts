@@ -27,6 +27,11 @@ export type AdminOperation =
   | 'settle_dispute_timeout'
   | 'register_deal'
   | 'record_equity_payment'
+  // governance contract (issue #1494). Both are permissionless on-chain — the
+  // contract functions take no Address and call no require_auth() — so the
+  // admin key only pays the fee and submits; it authorizes nothing user-specific.
+  | 'finalize_proposal'
+  | 'execute_proposal'
 
 /**
  * Parameters for admin operations
@@ -163,6 +168,8 @@ export class AdminSigningService {
       'settle_dispute_timeout',
       'register_deal',
       'record_equity_payment',
+      'finalize_proposal',
+      'execute_proposal',
     ]
     if (!allowedOperations.includes(params.operation)) {
       throw new ConfigurationError(

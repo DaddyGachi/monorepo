@@ -25,6 +25,11 @@ import {
   RecordRentToOwnEquityPaymentParams,
   RentToOwnDealActionParams,
   OraclePriceReading,
+  CreateGovernanceProposalParams,
+  GovernanceVoteParams,
+  GovernanceProposal,
+  GovernanceProposalStatus,
+  UnsignedTransaction,
 } from './adapter.js'
 import { SorobanConfig } from './client.js'
 import { RawReceiptEvent } from '../indexer/event-parser.js'
@@ -1708,5 +1713,300 @@ export class RealSorobanAdapter implements SorobanAdapter {
         span.end()
       }
     })
+  }
+
+  // ── governance contract (issue #1494) ──────────────────────────────────────
+
+  private requireGovernanceId(): string {
+    if (!this.config.governanceId) {
+      throw new ConfigurationError('SOROBAN_GOVERNANCE_ID not configured')
+    }
+    return this.config.governanceId
+  }
+
+  /**
+   * Build an *unsigned* `create_proposal` envelope whose source account is the
+   * proposer's own Stellar address.
+   *
+   * The contract calls `proposer.require_auth()`, so the authorization must come
+   * from the proposer's own signature. Every other write in this codebase is
+   * signed with SOROBAN_ADMIN_SECRET, which cannot satisfy that check — hence
+   * the prepare/sign/submit split: the connected wallet signs this XDR
+   * client-side and posts it back to `submitGovernanceTransaction`.
+   */
+  async createProposal(
+    params: CreateGovernanceProposalParams,
+  ): Promise<UnsignedTransaction> {
+    const contractId = this.requireGovernanceId()
+    return this.buildUnsignedGovernanceTx(
+      contractId,
+      params.proposer,
+      'create_proposal',
+      [
+        nativeToScVal(Address.fromString(params.proposer)),
+        nativeToScVal(params.paramKey, { type: 'symbol' }),
+        nativeToScVal(params.currentValue, { type: 'i128' }),
+        nativeToScVal(params.proposedValue, { type: 'i128' }),
+      ],
+    )
+  }
+
+  /** Build an *unsigned* `vote` envelope sourced from the voter's address. */
+  async vote(params: GovernanceVoteParams): Promise<UnsignedTransaction> {
+    const contractId = this.requireGovernanceId()
+    return this.buildUnsignedGovernanceTx(contractId, params.voter, 'vote', [
+      nativeToScVal(Address.fromString(params.voter)),
+      nativeToScVal(params.proposalId, { type: 'u64' }),
+      nativeToScVal(params.support, { type: 'bool' }),
+    ])
+  }
+
+  private async buildUnsignedGovernanceTx(
+    contractId: string,
+    sourceAccount: string,
+    method: string,
+    args: xdr.ScVal[],
+  ): Promise<UnsignedTransaction> {
+    return tracer.startActiveSpan(
+      `RealSorobanAdapter.buildUnsignedGovernanceTx:${method}`,
+      async (span: Span) => {
+        span.setAttribute('soroban.contract_id', contractId)
+        span.setAttribute('soroban.method', method)
+        try {
+          // The user's own account supplies the sequence number — no admin
+          // sequence allocation is involved because we never sign this tx.
+          const account = await this.server.getAccount(sourceAccount)
+
+          const tx = new TransactionBuilder(account, {
+            fee: BASE_FEE,
+            networkPassphrase: this.config.networkPassphrase,
+          })
+            .addOperation(
+              Operation.invokeHostFunction({
+                func: xdr.HostFunction.hostFunctionTypeInvokeContract(
+                  new xdr.InvokeContractArgs({
+                    contractAddress: Address.fromString(contractId).toScAddress(),
+                    functionName: method,
+                    args,
+                  }),
+                ),
+                auth: [],
+              }),
+            )
+            .setTimeout(300)
+            .build()
+
+          // Simulate + assemble so the envelope carries its Soroban footprint
+          // and resource fee. The wallet signs exactly once, so the tx must
+          // already be complete at signing time.
+          const prepared = await this.server.prepareTransaction(tx)
+
+          span.setStatus({ code: SpanStatusCode.OK })
+          return { xdr: prepared.toXDR() }
+        } catch (err: any) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: err?.message || String(err),
+          })
+          if (err instanceof Error) span.recordException(err)
+          if (err instanceof SorobanError) throw err
+          throw new ContractError(
+            `Failed to build unsigned ${method} transaction`,
+            contractId,
+            method,
+            err,
+          )
+        } finally {
+          span.end()
+        }
+      },
+    )
+  }
+
+  /**
+   * Broadcast a wallet-signed envelope and wait for it to be applied.
+   * Beyond the issue's literal method list, but required to complete the
+   * user-signed flow started by createProposal/vote.
+   */
+  async submitGovernanceTransaction(signedXdr: string): Promise<{ txHash: string }> {
+    return tracer.startActiveSpan(
+      'RealSorobanAdapter.submitGovernanceTransaction',
+      async (span: Span) => {
+        const contractId = this.requireGovernanceId()
+        try {
+          let tx
+          try {
+            tx = TransactionBuilder.fromXDR(signedXdr, this.config.networkPassphrase)
+          } catch (err) {
+            throw new TransactionError(
+              'Signed transaction envelope could not be parsed',
+              undefined,
+              'submit_governance_transaction',
+              err,
+            )
+          }
+
+          const response = await this.server.sendTransaction(tx)
+          span.setAttribute('soroban.tx_hash', response.hash)
+
+          if (response.status !== 'PENDING') {
+            throw new TransactionError(
+              `Governance transaction rejected with status: ${response.status}`,
+              response.hash,
+              'submit_governance_transaction',
+            )
+          }
+
+          const confirmed = await this.waitForGovernanceTransaction(response.hash)
+          if (!confirmed) {
+            throw new TransactionError(
+              'Governance transaction not confirmed within timeout',
+              response.hash,
+              'submit_governance_transaction',
+            )
+          }
+          if (confirmed !== 'SUCCESS') {
+            throw new TransactionError(
+              `Governance transaction failed: ${confirmed}`,
+              response.hash,
+              'submit_governance_transaction',
+            )
+          }
+
+          span.setStatus({ code: SpanStatusCode.OK })
+          return { txHash: response.hash }
+        } catch (err: any) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: err?.message || String(err),
+          })
+          if (err instanceof Error) span.recordException(err)
+          if (err instanceof SorobanError) throw err
+          throw new ContractError(
+            'Failed to submit signed governance transaction',
+            contractId,
+            'submit_governance_transaction',
+            err,
+          )
+        } finally {
+          span.end()
+        }
+      },
+    )
+  }
+
+  private async waitForGovernanceTransaction(
+    txHash: string,
+    maxAttempts = 30,
+    pollIntervalMs = 1000,
+  ): Promise<string | null> {
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, pollIntervalMs))
+      try {
+        const result = await this.server.getTransaction(txHash)
+        if (result.status === 'SUCCESS' || result.status === 'FAILED') {
+          return result.status
+        }
+      } catch (err) {
+        if (isTransientRpcError(err)) continue
+        throw err
+      }
+    }
+    return null
+  }
+
+  /**
+   * `finalize_proposal(proposal_id)` is permissionless on-chain — it takes no
+   * Address and calls no `require_auth()`. Anyone (including a bot) may call it
+   * once the voting period has elapsed; the admin key here is only a fee payer.
+   */
+  async finalizeProposal(proposalId: number): Promise<string> {
+    const contractId = this.requireGovernanceId()
+    return this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'finalize_proposal',
+      args: [nativeToScVal(proposalId, { type: 'u64' })],
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret!,
+      server: this.server,
+    })
+  }
+
+  /** Permissionless on-chain, same as finalizeProposal. */
+  async executeProposal(proposalId: number): Promise<string> {
+    const contractId = this.requireGovernanceId()
+    return this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'execute_proposal',
+      args: [nativeToScVal(proposalId, { type: 'u64' })],
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret!,
+      server: this.server,
+    })
+  }
+
+  async getProposal(proposalId: number): Promise<GovernanceProposal | null> {
+    const contractId = this.requireGovernanceId()
+    try {
+      const retval = await this.invokeReadOnly(contractId, 'get_proposal', [
+        nativeToScVal(proposalId, { type: 'u64' }),
+      ])
+      const native = scValToNative(retval)
+      if (native === null || native === undefined) return null
+      return normalizeGovernanceProposal(native)
+    } catch (err) {
+      if (err instanceof SorobanError) throw err
+      throw new ContractError(
+        `Failed to read governance proposal ${proposalId}`,
+        contractId,
+        'get_proposal',
+        err,
+      )
+    }
+  }
+
+  async getProposalCount(): Promise<number> {
+    const contractId = this.requireGovernanceId()
+    try {
+      const retval = await this.invokeReadOnly(contractId, 'proposal_count', [])
+      return Number(scValToNative(retval) ?? 0)
+    } catch (err) {
+      if (err instanceof SorobanError) throw err
+      throw new ContractError(
+        'Failed to read governance proposal count',
+        contractId,
+        'proposal_count',
+        err,
+      )
+    }
+  }
+}
+
+/**
+ * Convert the snake_cased, i128-bearing `Proposal` struct returned by
+ * `scValToNative` into the camelCased, JSON-safe shape the API exposes.
+ * i128 fields become decimal strings so large values keep full precision.
+ */
+export function normalizeGovernanceProposal(native: any): GovernanceProposal {
+  const asString = (v: unknown): string =>
+    v === null || v === undefined ? '0' : BigInt(v as any).toString()
+
+  // `scValToNative` renders a unit-variant enum such as ProposalStatus either
+  // as a bare string or as a single-element array of the variant name.
+  const rawStatus = Array.isArray(native?.status) ? native.status[0] : native?.status
+  const status = String(rawStatus ?? 'Active') as GovernanceProposalStatus
+
+  return {
+    id: Number(native?.id ?? 0),
+    proposer: String(native?.proposer ?? ''),
+    paramKey: String(native?.param_key ?? ''),
+    currentValue: asString(native?.current_value),
+    proposedValue: asString(native?.proposed_value),
+    votesFor: asString(native?.votes_for),
+    votesAgainst: asString(native?.votes_against),
+    status,
+    createdAt: Number(native?.created_at ?? 0),
+    votingEndsAt: Number(native?.voting_ends_at ?? 0),
+    snapshottedTotalStaked: asString(native?.snapshotted_total_staked),
   }
 }
