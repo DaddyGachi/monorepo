@@ -508,9 +508,9 @@ interface LightboxProps {
 }
 
 function Lightbox({ isOpen, photo, photos, onClose, onNext, onPrev }: LightboxProps) {
-  if (!isOpen || !photo) return null
-
   const lightboxRef = useFocusTrap(isOpen, onClose)
+
+  if (!isOpen || !photo) return null
 
   const currentIndex = photos.findIndex(p => p.id === photo.id)
 
