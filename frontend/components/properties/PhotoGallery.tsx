@@ -418,11 +418,13 @@ function PhotoCard({
       {/* Image */}
       <div className="aspect-square relative">
         {isLocalUrl(photo.url) ? (
-          // eslint-disable-next-line @next/next/no-img-element -- blob/data URLs are incompatible with next/image
-          <img
+          <Image
             src={photo.url}
             alt={photo.fileName || 'Property photo'}
-            className="w-full h-full object-cover"
+            fill
+            unoptimized
+            sizes="(max-width: 768px) 50vw, 25vw"
+            className="object-cover"
           />
         ) : (
           <Image
@@ -548,10 +550,12 @@ function Lightbox({ isOpen, photo, photos, onClose, onNext, onPrev }: LightboxPr
       {/* Image */}
       <div className="max-w-4xl max-h-[80vh] p-4 relative">
         {isLocalUrl(photo.url) ? (
-          // eslint-disable-next-line @next/next/no-img-element -- blob/data URLs are incompatible with next/image
-          <img
+          <Image
             src={photo.url}
             alt={photo.fileName || 'Property photo'}
+            width={1200}
+            height={800}
+            unoptimized
             className="max-w-full max-h-full object-contain"
           />
         ) : (

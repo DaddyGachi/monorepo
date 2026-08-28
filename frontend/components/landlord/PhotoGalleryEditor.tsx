@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import {
   GripVertical,
   Star,
@@ -308,11 +309,13 @@ export function PhotoGalleryEditor({
             }}
             className="relative aspect-video overflow-hidden rounded-md border-2 border-foreground bg-muted"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src={photo.preview}
               alt="Property photo"
-              className="h-full w-full object-cover"
+              fill
+              unoptimized={photo.preview.startsWith("blob:") || photo.preview.startsWith("data:")}
+              sizes="(max-width: 768px) 50vw, 25vw"
+              className="object-cover"
             />
             <div className="absolute left-1 top-1 flex gap-1">
               <span className="bg-background/90 p-1">
