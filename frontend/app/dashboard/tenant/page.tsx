@@ -190,7 +190,7 @@ export default function TenantDashboard() {
     let detailText = "";
     if ("paidDate" in payment && payment.paidDate) {
       detailText = `Paid on ${new Date(payment.paidDate).toLocaleDateString()}`;
-    } else if ("dueDate" in payment) {
+    } else if ("dueDate" in payment && payment.dueDate) {
       detailText = `Due ${new Date(payment.dueDate).toLocaleDateString()}`;
     }
 

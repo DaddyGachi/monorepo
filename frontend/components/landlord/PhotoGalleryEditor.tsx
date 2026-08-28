@@ -162,13 +162,6 @@ export function PhotoGalleryEditor({
     [photos, updatePhotos],
   );
 
-  const onDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    if (event.dataTransfer.files?.length) {
-      handleFiles(event.dataTransfer.files);
-    }
-  }, [handleFiles]);
-
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
       const selected = Array.from(files).filter((file) =>
@@ -240,6 +233,16 @@ export function PhotoGalleryEditor({
       }
     },
     [availableSlots, photos, propertyId, updatePhotos, onChange, primaryPhotoId],
+  );
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      if (event.dataTransfer.files?.length) {
+        handleFiles(event.dataTransfer.files);
+      }
+    },
+    [handleFiles],
   );
 
   const fileBrowse = useCallback(() => {
