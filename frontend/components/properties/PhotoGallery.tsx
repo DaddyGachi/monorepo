@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { Image as ImageIcon, Star, Trash2, GripVertical, X, Upload, ChevronLeft, ChevronRight, Info } from 'lucide-react'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -507,12 +508,14 @@ interface LightboxProps {
 }
 
 function Lightbox({ isOpen, photo, photos, onClose, onNext, onPrev }: LightboxProps) {
+  const lightboxRef = useFocusTrap(isOpen, onClose)
+
   if (!isOpen || !photo) return null
 
   const currentIndex = photos.findIndex(p => p.id === photo.id)
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center">
+    <div ref={lightboxRef} role="dialog" aria-modal="true" className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center">
       {/* Close Button */}
       <Button
         variant="ghost"
