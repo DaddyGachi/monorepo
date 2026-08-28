@@ -14,6 +14,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { accountSignupSchema, type AccountSignupFormValues } from "@/lib/formSchemas";
 import { parseFormError } from "@/lib/formErrors";
+import { startUserRegistration, trackRegistrationStep, completeUserRegistration } from "@/lib/analytics-init";
 
 const SIGNUP_FIELDS: Array<keyof AccountSignupFormValues> = [
   "fullName",
@@ -53,12 +54,15 @@ export default function SignupPage() {
   const password = watch("password", "");
 
   const onSubmit = async (data: AccountSignupFormValues) => {
+    startUserRegistration("anonymous");
+    trackRegistrationStep("anonymous", "submit_signup");
     if (isSubmitting) return;
 
     clearErrors("root");
 
     try {
       await requestOtp(data.email);
+      completeUserRegistration("anonymous", { role: userType });
       router.push(`/verify-otp?email=${encodeURIComponent(data.email)}`);
     } catch (error) {
       const { message, fieldErrors } = parseFormError(error, "Registration failed");
