@@ -129,7 +129,7 @@ export default function MessagesPage() {
     enabled: isAuthenticated && !!selectedConversationId,
     onMessage: (msg) => {
       if (msg.type === "new_message" && msg.conversationId === selectedConversationId) {
-        const newMsg = msg.payload as ApiMessage;
+        const newMsg = msg.payload as unknown as ApiMessage;
         setMessages(prev => {
           const exists = prev.some(m => m.id === newMsg.id);
           return exists ? prev : [...prev, apiMessageToLocal(newMsg)];
