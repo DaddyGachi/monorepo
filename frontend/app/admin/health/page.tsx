@@ -83,12 +83,8 @@ type PanelState<T> =
 
 // ── Mock fetch helpers (replace with real apiFetch calls) ─────────────────────
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-
 async function fetchHealthSnapshot(): Promise<HealthSnapshot> {
-  const res = await fetch(`${BACKEND}/api/admin/health-snapshot`, {
-    headers: { "x-admin-secret": process.env.NEXT_PUBLIC_ADMIN_SECRET ?? "" },
-  });
+  const res = await fetch(`/api/admin/health-snapshot`);
   if (!res.ok) throw new Error(`Health snapshot failed: ${res.status}`);
   return res.json();
 }
@@ -104,9 +100,7 @@ async function fetchAlerts(params: {
   if (params.status)   q.set("status",   params.status);
   if (params.cursor)   q.set("cursor",   params.cursor);
   q.set("limit", String(params.limit ?? 20));
-  const res = await fetch(`${BACKEND}/api/admin/alerts?${q}`, {
-    headers: { "x-admin-secret": process.env.NEXT_PUBLIC_ADMIN_SECRET ?? "" },
-  });
+  const res = await fetch(`/api/admin/alerts?${q}`);
   if (!res.ok) throw new Error(`Alerts failed: ${res.status}`);
   return res.json();
 }
