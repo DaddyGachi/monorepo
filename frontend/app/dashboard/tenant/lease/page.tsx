@@ -576,10 +576,7 @@ export default function TenantLeasePage() {
                       <button
                         type="button"
                         className="flex flex-1 items-center gap-4 text-left"
-                        onClick={(e) => {
-                          docModalTriggerRef.current = e.currentTarget;
-                          setSelectedDocument(doc);
-                        }}
+                        onClick={() => setSelectedDocument(doc)}
                         aria-label={`View details for ${doc.name}`}
                       >
                         <div className="flex h-10 w-10 items-center justify-center border-2 border-foreground bg-muted shrink-0">
@@ -612,10 +609,7 @@ export default function TenantLeasePage() {
               {selectedDocument && (
                 <DocPreviewModal
                   doc={selectedDocument}
-                  onClose={() => {
-                    setSelectedDocument(null);
-                    docModalTriggerRef.current?.focus();
-                  }}
+                  onClose={() => setSelectedDocument(null)}
                 />
               )}
 
