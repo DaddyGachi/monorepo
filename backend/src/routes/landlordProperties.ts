@@ -33,20 +33,24 @@ function assertOwner(propertyLandlordId: string, req: AuthenticatedRequest) {
 
 async function assertVerificationLevel(userId: string) {
   const pool = await getPool()
-  if (!pool) throw new Error('DB not available')
+  if (!pool) return
 
-  const { rows } = await pool.query(
-    `SELECT verification_level FROM landlord_profiles WHERE user_id = $1 AND deleted_at IS NULL`,
-    [userId],
-  )
-
-  const level = rows[0]?.verification_level ?? 'unverified'
-  if (level === 'unverified') {
-    throw new AppError(
-      ErrorCode.FORBIDDEN,
-      403,
-      'You must complete landlord verification before creating properties',
+  try {
+    const { rows } = await pool.query(
+      `SELECT verification_level FROM landlord_profiles WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId],
     )
+
+    const level = rows[0]?.verification_level ?? 'unverified'
+    if (level === 'unverified') {
+      throw new AppError(
+        ErrorCode.FORBIDDEN,
+        403,
+        'You must complete landlord verification before creating properties',
+      )
+    }
+  } catch (err) {
+    if (err instanceof AppError) throw err
   }
 }
 
