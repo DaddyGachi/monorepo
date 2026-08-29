@@ -2084,6 +2084,301 @@ export class RealSorobanAdapter implements SorobanAdapter {
     return { isBonded: Boolean(native.is_bonded), amount: BigInt(native.amount ?? 0) }
   }
 
+  // Contract access role management methods
+
+  async proposeAssignRole(subject: string, role: number): Promise<string> {
+    const contractId = this.config.contractAccessId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_CONTRACT_ACCESS_ID not configured for role assignment')
+    }
+    if (!this.config.adminSecret) {
+      throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for role assignment')
+    }
+
+    const adminAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+    const args: xdr.ScVal[] = [
+      nativeToScVal(new Address(adminAddress)),
+      nativeToScVal(new Address(subject)),
+      nativeToScVal(role),
+    ]
+
+    const txHash = await this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'propose_assign_role',
+      args,
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret,
+      server: this.server,
+    })
+
+    logger.info('Role assignment proposed on-chain', { subject, role })
+    return txHash
+  }
+
+  async confirmAssignRole(subject: string): Promise<string> {
+    const contractId = this.config.contractAccessId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_CONTRACT_ACCESS_ID not configured for role confirmation')
+    }
+    if (!this.config.adminSecret) {
+      throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for role confirmation')
+    }
+
+    const approverAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+    const args: xdr.ScVal[] = [
+      nativeToScVal(new Address(approverAddress)),
+      nativeToScVal(new Address(subject)),
+    ]
+
+    const txHash = await this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'confirm_assign_role',
+      args,
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret,
+      server: this.server,
+    })
+
+    logger.info('Role assignment confirmed on-chain', { subject })
+    return txHash
+  }
+
+  async delegatePermission(delegatee: string, permission: number): Promise<string> {
+    const contractId = this.config.contractAccessId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_CONTRACT_ACCESS_ID not configured for permission delegation')
+    }
+    if (!this.config.adminSecret) {
+      throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for permission delegation')
+    }
+
+    const delegatorAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+    const args: xdr.ScVal[] = [
+      nativeToScVal(new Address(delegatorAddress)),
+      nativeToScVal(new Address(delegatee)),
+      nativeToScVal(permission),
+    ]
+
+    const txHash = await this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'delegate_permission',
+      args,
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret,
+      server: this.server,
+    })
+
+    logger.info('Permission delegated on-chain', { delegatee, permission })
+    return txHash
+  }
+
+  async getRole(address: string): Promise<number | null> {
+    const contractId = this.config.contractAccessId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_CONTRACT_ACCESS_ID not configured for role query')
+    }
+
+    try {
+      const result = await this.invokeReadOnly(
+        contractId,
+        'get_role',
+        [nativeToScVal(new Address(address))]
+      )
+      const role = scValToNative(result)
+      return role !== null ? Number(role) : null
+    } catch (err: any) {
+      if (err instanceof SorobanError) throw err
+      throw new ContractError(
+        `Failed to get role for ${address}`,
+        contractId,
+        'get_role',
+        err
+      )
+    }
+  }
+
+  async hasPermission(address: string, permission: number): Promise<boolean> {
+    const contractId = this.config.contractAccessId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_CONTRACT_ACCESS_ID not configured for permission query')
+    }
+
+    try {
+      const result = await this.invokeReadOnly(
+        contractId,
+        'has_permission',
+        [nativeToScVal(new Address(address)), nativeToScVal(permission)]
+      )
+      return Boolean(scValToNative(result))
+    } catch (err: any) {
+      if (err instanceof SorobanError) throw err
+      throw new ContractError(
+        `Failed to check permission for ${address}`,
+        contractId,
+        'has_permission',
+        err
+      )
+    }
+  }
+
+  async listRoles(): Promise<Array<{ address: string; role: number }>> {
+    const contractId = this.config.contractAccessId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_CONTRACT_ACCESS_ID not configured for role listing')
+    }
+
+    try {
+      const result = await this.invokeReadOnly(contractId, 'list_roles', [])
+      const roles = scValToNative(result) as Array<{ address: string; role: number }>
+      return roles.map(({ address, role }) => ({
+        address: address.toString(),
+        role: Number(role),
+      }))
+    } catch (err: any) {
+      if (err instanceof SorobanError) throw err
+      throw new ContractError(
+        'Failed to list roles',
+        contractId,
+        'list_roles',
+        err
+      )
+    }
+  }
+
+  // Upgradeable proxy governance methods
+
+  async proposeUpgrade(newWasmHash: string): Promise<string> {
+    const contractId = this.config.upgradeableProxyId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_UPGRADEABLE_PROXY_ID not configured for upgrade proposal')
+    }
+    if (!this.config.adminSecret) {
+      throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for upgrade proposal')
+    }
+
+    const adminAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+    const wasmHashBytes = Buffer.from(newWasmHash, 'hex')
+    const args: xdr.ScVal[] = [
+      nativeToScVal(new Address(adminAddress)),
+      nativeToScVal(wasmHashBytes, { type: 'bytes' }),
+    ]
+
+    const txHash = await this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'propose_upgrade',
+      args,
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret,
+      server: this.server,
+    })
+
+    logger.info('Upgrade proposed on-chain', { wasmHash: newWasmHash })
+    return txHash
+  }
+
+  async confirmUpgrade(newWasmHash: string): Promise<string> {
+    const contractId = this.config.upgradeableProxyId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_UPGRADEABLE_PROXY_ID not configured for upgrade confirmation')
+    }
+    if (!this.config.adminSecret) {
+      throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for upgrade confirmation')
+    }
+
+    const approverAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+    const wasmHashBytes = Buffer.from(newWasmHash, 'hex')
+    const args: xdr.ScVal[] = [
+      nativeToScVal(new Address(approverAddress)),
+      nativeToScVal(wasmHashBytes, { type: 'bytes' }),
+    ]
+
+    const txHash = await this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'confirm_upgrade',
+      args,
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret,
+      server: this.server,
+    })
+
+    logger.info('Upgrade confirmed on-chain', { wasmHash: newWasmHash })
+    return txHash
+  }
+
+  async cancelUpgrade(): Promise<string> {
+    const contractId = this.config.upgradeableProxyId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_UPGRADEABLE_PROXY_ID not configured for upgrade cancellation')
+    }
+    if (!this.config.adminSecret) {
+      throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for upgrade cancellation')
+    }
+
+    const adminAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+    const args: xdr.ScVal[] = [
+      nativeToScVal(new Address(adminAddress)),
+    ]
+
+    const txHash = await this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'cancel_upgrade',
+      args,
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret,
+      server: this.server,
+    })
+
+    logger.info('Upgrade cancelled on-chain')
+    return txHash
+  }
+
+  async transferAdmin(newAdminAddress: string): Promise<string> {
+    const contractId = this.config.upgradeableProxyId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_UPGRADEABLE_PROXY_ID not configured for admin transfer')
+    }
+    if (!this.config.adminSecret) {
+      throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for admin transfer')
+    }
+
+    const adminAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+    const args: xdr.ScVal[] = [
+      nativeToScVal(new Address(adminAddress)),
+      nativeToScVal(new Address(newAdminAddress)),
+    ]
+
+    const txHash = await this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'transfer_admin',
+      args,
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret,
+      server: this.server,
+    })
+
+    logger.info('Admin transferred on-chain', { newAdmin: newAdminAddress })
+    return txHash
+  }
+
+  async hasPendingUpgrade(): Promise<boolean> {
+    const contractId = this.config.upgradeableProxyId
+    if (!contractId) {
+      throw new ConfigurationError('SOROBAN_UPGRADEABLE_PROXY_ID not configured for pending upgrade check')
+    }
+
+    try {
+      const result = await this.invokeReadOnly(contractId, 'has_pending_upgrade', [])
+      return Boolean(scValToNative(result))
+    } catch (err: any) {
+      if (err instanceof SorobanError) throw err
+      throw new ContractError(
+        'Failed to check pending upgrade status',
+        contractId,
+        'has_pending_upgrade',
+        err
+      )
+    }
+  }
   /**
    * Read the current price for `pair` from the oracle_price_feeds contract.
    * The contract's `get_price` itself reverts with `PriceTooStale` (and other

@@ -14,6 +14,8 @@ export const CONTRACT_ENV_VARS = {
   inspectorBond: 'SOROBAN_INSPECTOR_BOND_ID',
   tenantReputation: 'SOROBAN_TENANT_REPUTATION_ID',
   usdcToken: 'SOROBAN_USDC_TOKEN_ID',
+  contractAccess: 'SOROBAN_CONTRACT_ACCESS_ID',
+  upgradeableProxy: 'SOROBAN_UPGRADEABLE_PROXY_ID',
   rentToOwn: 'SOROBAN_RENT_TO_OWN_ID',
   oraclePriceFeeds: 'SOROBAN_ORACLE_PRICE_FEEDS_ID',
   transactionReceipt: 'SOROBAN_TRANSACTION_RECEIPT_ID',

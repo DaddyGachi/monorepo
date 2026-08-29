@@ -12,6 +12,8 @@ export type SorobanConfig = {
   usdcTokenId?: string
   dealEscrowId?: string
   inspectorBondId?: string
+  contractAccessId?: string
+  upgradeableProxyId?: string
   rentToOwnId?: string
   oraclePriceFeedsId?: string
   transactionReceiptId?: string
@@ -39,6 +41,8 @@ export function getSorobanConfigFromEnv(env: NodeJS.ProcessEnv): SorobanConfig {
     usdcTokenId: addresses.usdcToken,
     dealEscrowId: addresses.dealEscrow,
     inspectorBondId: addresses.inspectorBond,
+    contractAccessId: addresses.contractAccess,
+    upgradeableProxyId: addresses.upgradeableProxy,
     rentToOwnId: addresses.rentToOwn,
     oraclePriceFeedsId: addresses.oraclePriceFeeds,
     transactionReceiptId: addresses.transactionReceipt,
