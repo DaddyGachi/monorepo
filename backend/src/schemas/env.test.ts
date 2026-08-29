@@ -55,6 +55,8 @@ describe('envSchema — USDC token id requirements', () => {
       PAYSTACK_SECRET: 'paystack',
       FLUTTERWAVE_SECRET: 'flutter',
       MANUAL_ADMIN_SECRET: 'admin',
+      RESEND_API_KEY: 're_testkey',
+      RESEND_FROM_EMAIL: 'notifications@example.com',
     }
 
     const result = envSchema.safeParse(baseProd)
@@ -95,6 +97,8 @@ describe('envSchema — USDC token id requirements', () => {
       PAYSTACK_SECRET: 'paystack',
       FLUTTERWAVE_SECRET: 'flutter',
       MANUAL_ADMIN_SECRET: 'admin',
+      RESEND_API_KEY: 're_testkey',
+      RESEND_FROM_EMAIL: 'notifications@example.com',
       SOROBAN_USDC_TOKEN_ID: VALID_CONTRACT_ID,
     })
 
@@ -112,9 +116,28 @@ describe('envSchema — USDC token id requirements', () => {
       PAYSTACK_SECRET: 'paystack',
       FLUTTERWAVE_SECRET: 'flutter',
       MANUAL_ADMIN_SECRET: 'admin',
+      RESEND_API_KEY: 're_testkey',
+      RESEND_FROM_EMAIL: 'notifications@example.com',
       USDC_TOKEN_ADDRESS: VALID_CONTRACT_ID,
     })
 
     expect(result.success).toBe(true)
+  })
+
+  it('production rejects missing RESEND_API_KEY or RESEND_FROM_EMAIL', async () => {
+    const envSchema = await loadEnvSchema()
+
+    const result = envSchema.safeParse({
+      NODE_ENV: 'production',
+      ENCRYPTION_KEY: 'a'.repeat(32),
+      CUSTODIAL_WALLET_MASTER_KEY_V1: 'b'.repeat(32),
+      WEBHOOK_SECRET: 'secret',
+      PAYSTACK_SECRET: 'paystack',
+      FLUTTERWAVE_SECRET: 'flutter',
+      MANUAL_ADMIN_SECRET: 'admin',
+      SOROBAN_USDC_TOKEN_ID: VALID_CONTRACT_ID,
+    })
+
+    expect(result.success).toBe(false)
   })
 })
