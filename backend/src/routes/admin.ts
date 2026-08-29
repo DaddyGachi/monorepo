@@ -1548,5 +1548,38 @@ export function createAdminRouter(
     }
   );
 
+  /**
+   * GET /api/admin/receipts
+   * List indexed receipts with optional filters (no admin-secret gate)
+   */
+  router.get(
+    "/receipts",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        if (!indexer?.receiptRepository) {
+          throw new AppError(
+            ErrorCode.INTERNAL_ERROR,
+            501,
+            "Receipt repository not available on this deployment",
+          );
+        }
+
+        const page = Math.max(1, Number(req.query.page ?? 1));
+        const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
+        const dealId = typeof req.query.dealId === "string" ? req.query.dealId : undefined;
+
+        const result = await indexer.receiptRepository.query({
+          dealId,
+          page,
+          pageSize,
+        });
+
+        res.json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
