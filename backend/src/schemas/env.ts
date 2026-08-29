@@ -144,6 +144,13 @@ export const envSchema = z.object({
     path: ['MANUAL_ADMIN_SECRET'],
   })
   .refine((data) => {
+    if (data.NODE_ENV !== 'production') return true
+    return !!data.RESEND_API_KEY && !!data.RESEND_FROM_EMAIL
+  }, {
+    message: 'RESEND_API_KEY and RESEND_FROM_EMAIL are required in production for email notifications',
+    path: ['RESEND_API_KEY'],
+  })
+  .refine((data) => {
     if (data.OTP_DELIVERY_PROVIDER !== 'email') return true
     return !!data.RESEND_API_KEY && !!data.RESEND_FROM_EMAIL
   }, {
