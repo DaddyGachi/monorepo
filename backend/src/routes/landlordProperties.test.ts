@@ -3,6 +3,11 @@ import { createTestAgent, expectErrorShape } from '../test-helpers.js'
 import { landlordPropertyStore } from '../models/landlordPropertyStore.js'
 import { userStore, sessionStore } from '../models/authStore.js'
 import { PropertyStatus } from '../models/landlordProperty.js'
+import { getPool } from '../db.js'
+
+vi.mock('../db.js', () => ({
+  getPool: vi.fn(),
+}))
 
 describe('Landlord Properties API', () => {
   const request = createTestAgent()
@@ -32,8 +37,14 @@ describe('Landlord Properties API', () => {
       email: landlordEmail,
       createdAt: new Date(),
     })
-    
-    // Mock the postgres repo to fail so it uses fallback cache
+
+    // Mock the postgres repo to return verified landlord
+    const mockPool = {
+      query: vi.fn().mockResolvedValue({
+        rows: [{ verification_level: 'id_verified' }],
+      }),
+    }
+    vi.mocked(getPool).mockResolvedValue(mockPool as any)
     vi.spyOn(console, 'warn').mockImplementation(() => {})
   })
 
