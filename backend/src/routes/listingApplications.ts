@@ -54,7 +54,8 @@ router.post(
         );
       }
 
-      // Fetch landlordId from listing
+      // Persist the listing owner's real ID so subsequent reviews can enforce
+      // ownership against the landlord associated with this specific listing.
       const landlordId =
         await listingApplicationRepository.getListingLandlordId(listingId);
       if (!landlordId) {
