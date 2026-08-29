@@ -26,4 +26,7 @@ USER app
 
 EXPOSE 4000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -q -T 5 --spider "http://localhost:${PORT:-4000}/health" || exit 1
+
 CMD ["node", "dist/index.js"]

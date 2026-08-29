@@ -570,43 +570,24 @@ export function createApp() {
   timelockIndexer.start();
   workers.push(timelockIndexer);
 
-  // Graceful shutdown orchestration
+  // Graceful shutdown of the workers/services started above. Exposed via
+  // app.locals rather than registering our own SIGTERM/SIGINT listeners here:
+  // index.ts owns the single centralized signal handler for the whole process
+  // (HTTP server, DB pool, Redis, and the workers it starts directly) and
+  // calls this as one step in that sequence — a second independent handler
+  // racing to process.exit() would risk cutting the other's cleanup short.
   if (env.NODE_ENV !== "test") {
-    const shutdown = async (signal: string) => {
-      logger.info(`Received ${signal}, starting graceful shutdown...`);
+    app.locals.shutdownWorkers = async () => {
+      // Stop secret rotation watcher
+      const secretRotationService = getSecretRotationService();
+      secretRotationService.stopWatching();
 
-      const timeoutMs = 30000;
-      const timeout = setTimeout(() => {
-        logger.error(
-          `Graceful shutdown timed out after ${timeoutMs}ms, forcing exit`,
-        );
-        process.exit(1);
-      }, timeoutMs);
+      // Stop all workers
+      await Promise.all(workers.map((w) => w.stop()));
 
-      try {
-        // Stop secret rotation watcher
-        const secretRotationService = getSecretRotationService();
-        secretRotationService.stopWatching();
-
-        // Stop all workers
-        await Promise.all(workers.map((w) => w.stop()));
-
-        // Shutdown metrics
-        await shutdownMetrics();
-
-        clearTimeout(timeout);
-        logger.info("Graceful shutdown completed successfully");
-        process.exit(0);
-      } catch (err) {
-        logger.error("Error during graceful shutdown", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        process.exit(1);
-      }
+      // Shutdown metrics
+      await shutdownMetrics();
     };
-
-    process.once("SIGTERM", () => void shutdown("SIGTERM"));
-    process.once("SIGINT", () => void shutdown("SIGINT"));
   }
 
   // Core middleware
