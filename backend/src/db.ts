@@ -12,6 +12,7 @@ export type PgClientLike = {
 export type PgPoolLike = {
   query: (text: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount: number }>
   connect: () => Promise<PgClientLike>
+  end?: () => Promise<void>
 }
 
 let pool: PgPoolLike | null = null
@@ -135,6 +136,27 @@ export function setPool(newPool: PgPoolLike | null) {
 
 export function setReadPool(newPool: PgPoolLike | null) {
   readPool = newPool
+}
+
+/**
+ * Closes the primary and (if initialized) read-replica pools. Safe to call
+ * even if no pool was ever opened (e.g. no DATABASE_URL configured).
+ */
+export async function closeDbPools(): Promise<void> {
+  const pools = [pool, readPool]
+  pool = null
+  readPool = null
+
+  await Promise.all(
+    pools.map(async (p) => {
+      if (!p?.end) return
+      try {
+        await p.end()
+      } catch (err) {
+        logger.error('Error closing DB pool', {}, err instanceof Error ? err : undefined)
+      }
+    }),
+  )
 }
 
 /**
