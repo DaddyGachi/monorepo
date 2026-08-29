@@ -17,6 +17,7 @@ import {
   Copy,
   ExternalLink,
 } from "lucide-react";
+import { claimReward } from "@/lib/ngnStakingApi";
 
 interface StakingClaimFlowProps {
   isOpen: boolean;
@@ -50,18 +51,18 @@ export function StakingClaimFlow({
     setStep("processing");
     setTransaction({ status: "pending", timestamp: new Date() });
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    const txHash = "0x" + Math.random().toString(16).slice(2, 66);
-    setTransaction({
-      hash: txHash,
-      status: "confirmed",
-      timestamp: new Date(),
-    });
-
-    setTimeout(() => {
+    try {
+      const response = await claimReward();
+      setTransaction({
+        hash: response.txId,
+        status: response.status === "CONFIRMED" ? "confirmed" : "pending",
+        timestamp: new Date(),
+      });
       setStep("success");
-    }, 1500);
+    } catch (err) {
+      setTransaction({ status: "failed", timestamp: new Date() });
+      setStep("failed");
+    }
   };
 
   const copyHash = () => {
@@ -267,7 +268,9 @@ export function StakingClaimFlow({
                     <div className="space-y-1 text-sm">
                       <p>
                         <strong>Status:</strong>{" "}
-                        <span className="text-primary">Confirmed</span>
+                        <span className={transaction.status === "confirmed" ? "text-primary" : "text-muted-foreground"}>
+                          {transaction.status === "confirmed" ? "Confirmed" : "Queued for retry"}
+                        </span>
                       </p>
                       <p>
                         <strong>Amount:</strong> {formatNgn(netAmount)}

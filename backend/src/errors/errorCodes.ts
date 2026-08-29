@@ -67,6 +67,8 @@ export enum ErrorCode {
   CONFLICT = "CONFLICT",
   LISTING_ALREADY_RENTED = "LISTING_ALREADY_RENTED",
   INVALID_STATE_TRANSITION = "INVALID_STATE_TRANSITION",
+  /** A schedule-item payment would push accumulated rent-to-own equity over the property value. */
+  EQUITY_OVERFLOW = "EQUITY_OVERFLOW",
 
   // Blockchain / Soroban
   SOROBAN_ERROR = "SOROBAN_ERROR",
@@ -117,6 +119,7 @@ export const ERROR_CLASSIFICATION: Record<string, ErrorClassification> = {
   [ErrorCode.CONFLICT]: "permanent",
   [ErrorCode.LISTING_ALREADY_RENTED]: "permanent",
   [ErrorCode.INVALID_STATE_TRANSITION]: "permanent",
+  [ErrorCode.EQUITY_OVERFLOW]: "permanent",
   [ErrorCode.SOROBAN_ERROR]: "transient",
   [ErrorCode.CHAIN_UNAVAILABLE]: "transient",
   [ErrorCode.EXTERNAL_SERVICE_ERROR]: "transient",

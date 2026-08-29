@@ -18,6 +18,13 @@ export const paymentDisputeStatusSchema = z.enum([
 
 export const paymentDisputeCreateSchema = z.object({
   paymentId: z.string().uuid(),
+  /**
+   * The deal_escrow deal this dispute is challenging a pending rent release
+   * for. paymentId alone does not resolve to a deal anywhere in this
+   * codebase, so it's captured explicitly at filing time — the frontend
+   * already has it via the payment's own `dealId` field.
+   */
+  dealId: z.string().min(1),
   reason: paymentDisputeReasonSchema,
   description: z.string().min(10).max(1000),
   evidenceKeys: z.array(z.string()).max(5).optional(),
@@ -31,6 +38,7 @@ export interface PaymentDispute {
   id: string
   userId: string
   paymentId: string
+  dealId: string | null
   reason: PaymentDisputeReason
   description: string
   evidenceKeys: string[]

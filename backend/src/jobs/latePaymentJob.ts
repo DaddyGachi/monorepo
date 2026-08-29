@@ -1,6 +1,7 @@
 import { getLatePaymentConfig } from '../config/latePayment.js'
 import { latePaymentEscalationService } from '../services/latePaymentEscalationService.js'
 import { logger } from '../utils/logger.js'
+import { observeJobRun, sumCounts } from './jobObservability.js'
 
 /**
  * Polls active deals and runs the late-payment escalation matrix.
@@ -37,17 +38,10 @@ export class LatePaymentJob {
   }
 
   async poll(now?: Date): Promise<void> {
-    try {
-      const started = Date.now()
+    await observeJobRun('late-payment-escalation', async () => {
       const result = await latePaymentEscalationService.processAllActiveDeals(now ?? new Date())
-      logger.info('LatePaymentJob completed', {
-        ...result,
-        durationMs: Date.now() - started,
-      })
-    } catch (error) {
-      logger.error('LatePaymentJob poll failed', {
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
+      logger.info('LatePaymentJob completed', { ...result })
+      return { recordsProcessed: sumCounts(result) }
+    })
   }
 }

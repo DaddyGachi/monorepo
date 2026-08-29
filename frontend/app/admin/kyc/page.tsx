@@ -168,14 +168,14 @@ export default function KycReviewQueuePage() {
         {!loading && (
           <>
             <div className="overflow-x-auto rounded border-2 border-foreground">
-              <table className="w-full">
+              <table className="w-full" aria-label="KYC submissions">
                 <thead className="bg-primary">
                   <tr>
-                    <th className="px-4 py-3 text-left font-bold">User ID</th>
-                    <th className="px-4 py-3 text-left font-bold">Document Type</th>
-                    <th className="px-4 py-3 text-left font-bold">Submission Date</th>
-                    <th className="px-4 py-3 text-left font-bold">Status</th>
-                    <th className="px-4 py-3 text-left font-bold">Action</th>
+                    <th scope="col" className="px-4 py-3 text-left font-bold">User ID</th>
+                    <th scope="col" className="px-4 py-3 text-left font-bold">Document Type</th>
+                    <th scope="col" className="px-4 py-3 text-left font-bold">Submission Date</th>
+                    <th scope="col" className="px-4 py-3 text-left font-bold">Status</th>
+                    <th scope="col" className="px-4 py-3 text-left font-bold">Action</th>
                   </tr>
                 </thead>
                 <tbody>

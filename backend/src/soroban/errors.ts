@@ -102,6 +102,48 @@ export function isDuplicateReceiptError(error: unknown, txId?: string): boolean 
 }
 
 /**
+ * deal_escrow's ContractError variants relevant to the rent-release dispute
+ * flow, with their #[repr(u32)] discriminants (see contracts/deal_escrow/src/lib.rs).
+ * Soroban surfaces contract errors as `Error(Contract, #<code>)` in
+ * diagnostic/error messages; we also match on the variant name as a
+ * best-effort fallback, mirroring `isDuplicateReceiptError`'s heuristic
+ * message-matching approach (AdminSigningService does not currently decode
+ * precise contract error codes from failed transactions).
+ */
+export const DEAL_ESCROW_DISPUTE_ERROR_CODES = {
+  NoPendingRelease: 17,
+  DisputeNotAllowed: 18,
+  NoOpenDispute: 19,
+  InvalidSettlement: 20,
+  InvalidReleaseWindow: 14,
+} as const
+
+export type DealEscrowDisputeErrorVariant = keyof typeof DEAL_ESCROW_DISPUTE_ERROR_CODES
+
+/**
+ * Check whether `error` (recursively, including its `.cause` chain) matches a
+ * specific deal_escrow ContractError variant, by its numeric discriminant
+ * (`#<code>`) or its variant name appearing in the error message.
+ */
+export function isDealEscrowContractError(
+  error: unknown,
+  variant: DealEscrowDisputeErrorVariant,
+): boolean {
+  const code = DEAL_ESCROW_DISPUTE_ERROR_CODES[variant]
+  let current: unknown = error
+  const seen = new Set<unknown>()
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    const message = current instanceof Error ? current.message : String(current)
+    if (message.includes(`#${code}`) || message.includes(variant)) {
+      return true
+    }
+    current = current instanceof Error ? (current as { cause?: unknown }).cause : undefined
+  }
+  return false
+}
+
+/**
  * Check if an error is a transient RPC error that should be retried
  */
 export function isTransientRpcError(error: unknown): boolean {

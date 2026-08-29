@@ -1207,4 +1207,380 @@ mod test {
             feed.price
         );
     }
+
+    // ── Issue #1425: Additional test coverage ───────────────────────────────
+
+    // ── Initialization edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn init_rejects_double_initialization() {
+        let env = Env::default();
+        let (contract_id, client, admin, operator, p) = setup(&env);
+
+        let result = client.try_init(&admin, &operator, &600u64, &500u64);
+        assert_eq!(result, Err(Ok(ContractError::AlreadyInitialized)));
+    }
+
+    #[test]
+    fn init_defaults_zero_staleness_to_600() {
+        let env = Env::default();
+        let contract_id = env.register(OraclePriceFeeds, ());
+        let client = OraclePriceFeedsClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let operator = Address::generate(&env);
+
+        // staleness=0 should default to DEFAULT_STALENESS_SECONDS (600)
+        client
+            .try_init(&admin, &operator, &0u64, &500u64)
+            .unwrap()
+            .unwrap();
+
+        env.ledger().set_timestamp(1_000);
+        env.mock_auths(&[MockAuth {
+            address: &operator,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "update_price",
+                args: (operator.clone(), Symbol::new(&env, "TEST"), 100i128, 1u64).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client
+            .try_update_price(&operator, &Symbol::new(&env, "TEST"), &100i128, &1u64)
+            .unwrap()
+            .unwrap();
+
+        // At t=1000+601=1601, price should be stale (staleness defaults to 600)
+        env.ledger().set_timestamp(1_601);
+        assert!(client.is_stale(&Symbol::new(&env, "TEST")));
+    }
+
+    #[test]
+    fn init_defaults_zero_deviation_to_500() {
+        let env = Env::default();
+        let contract_id = env.register(OraclePriceFeeds, ());
+        let client = OraclePriceFeedsClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let operator = Address::generate(&env);
+
+        // max_deviation_bps=0 should default to DEFAULT_MAX_DEVIATION_BPS (500)
+        client
+            .try_init(&admin, &operator, &600u64, &0u64)
+            .unwrap()
+            .unwrap();
+
+        env.ledger().set_timestamp(1_000);
+        env.mock_auths(&[MockAuth {
+            address: &operator,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "update_price",
+                args: (operator.clone(), Symbol::new(&env, "TEST"), 10000i128, 1u64).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client
+            .try_update_price(&operator, &Symbol::new(&env, "TEST"), &10000i128, &1u64)
+            .unwrap()
+            .unwrap();
+
+        // 5.01% deviation should be rejected with default 500 bps limit
+        env.mock_auths(&[MockAuth {
+            address: &operator,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "update_price",
+                args: (operator.clone(), Symbol::new(&env, "TEST"), 10501i128, 2u64).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let err = client
+            .try_update_price(&operator, &Symbol::new(&env, "TEST"), &10501i128, &2u64)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ContractError::PriceDeviationTooLarge);
+    }
+
+    // ── Admin-only function rejection tests ────────────────────────────────
+
+    #[test]
+    fn set_staleness_threshold_requires_admin() {
+        let env = Env::default();
+        let (contract_id, client, _admin, operator, _p) = setup(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &operator,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_staleness_threshold",
+                args: (operator.clone(), 1000u64).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let err = client
+            .try_set_staleness_threshold(&operator, &1000u64)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ContractError::NotAuthorized);
+    }
+
+    #[test]
+    fn add_source_requires_admin() {
+        let env = Env::default();
+        let (contract_id, client, _admin, operator, p) = setup(&env);
+        let stranger = Address::generate(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &stranger,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "add_source",
+                args: (stranger.clone(), p.clone(), Address::generate(&env)).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let result = client.try_add_source(&stranger, &p, &Address::generate(&env));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn remove_source_requires_admin() {
+        let env = Env::default();
+        let (contract_id, client, admin, _operator, p) = setup(&env);
+        let src = Address::generate(&env);
+        env.mock_all_auths();
+        client.add_source(&admin, &p, &src);
+
+        let stranger = Address::generate(&env);
+        let result = client.try_remove_source(&stranger, &p, &src);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_quorum_requires_admin() {
+        let env = Env::default();
+        let (contract_id, client, _admin, operator, p) = setup(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &operator,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_quorum",
+                args: (operator.clone(), p.clone(), 3u32).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let err = client
+            .try_set_quorum(&operator, &p, &3u32)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ContractError::NotAuthorized);
+    }
+
+    // ── Boundary and failure path tests ────────────────────────────────────
+
+    #[test]
+    fn get_price_unsafe_panics_for_unknown_pair() {
+        let env = Env::default();
+        let (_contract_id, client, _admin, _operator, _p) = setup(&env);
+        let unknown = Symbol::new(&env, "UNKNOWN");
+
+        let result = client.try_get_price_unsafe(&unknown);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_price_panics_for_unknown_pair_in_single_source_mode() {
+        let env = Env::default();
+        let (_contract_id, client, _admin, _operator, _p) = setup(&env);
+        let unknown = Symbol::new(&env, "UNKNOWN");
+
+        let result = client.try_get_price(&unknown);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn is_stale_returns_true_for_unknown_pair() {
+        let env = Env::default();
+        let (_contract_id, client, _admin, _operator, _p) = setup(&env);
+        let unknown = Symbol::new(&env, "UNKNOWN");
+
+        assert!(client.is_stale(&unknown));
+    }
+
+    #[test]
+    fn add_source_is_idempotent() {
+        let env = Env::default();
+        let (contract_id, client, admin, _operator, p) = setup(&env);
+        let src = Address::generate(&env);
+        env.mock_all_auths();
+
+        client.add_source(&admin, &p, &src);
+        client.add_source(&admin, &p, &src);
+
+        let sources = client.get_sources(&p);
+        assert_eq!(sources.len(), 1);
+    }
+
+    #[test]
+    fn remove_nonexistent_source_does_not_panic() {
+        let env = Env::default();
+        let (contract_id, client, admin, _operator, p) = setup(&env);
+        let nonexistent = Address::generate(&env);
+        env.mock_all_auths();
+
+        // Removing a source that was never added should not panic
+        client.remove_source(&admin, &p, &nonexistent);
+        let sources = client.get_sources(&p);
+        assert_eq!(sources.len(), 0);
+    }
+
+    #[test]
+    fn get_sources_returns_empty_for_unknown_pair() {
+        let env = Env::default();
+        let (_contract_id, client, _admin, _operator, _p) = setup(&env);
+        let unknown = Symbol::new(&env, "UNKNOWN");
+
+        let sources = client.get_sources(&unknown);
+        assert!(sources.is_empty());
+    }
+
+    #[test]
+    fn set_staleness_threshold_updates_value() {
+        let env = Env::default();
+        let (contract_id, client, admin, _operator, p) = setup(&env);
+        env.mock_all_auths();
+
+        client.set_staleness_threshold(&admin, &1200u64);
+
+        // Publish a price at t=1000
+        env.ledger().set_timestamp(1_000);
+        client.update_price(&admin, &p, &100i128, &1u64);
+
+        // At t=1800 (800s later), should NOT be stale with 1200s threshold
+        env.ledger().set_timestamp(1_800);
+        assert!(!client.is_stale(&p));
+
+        // At t=2201 (1201s later), should be stale
+        env.ledger().set_timestamp(2_201);
+        assert!(client.is_stale(&p));
+    }
+
+    #[test]
+    fn deviation_check_with_custom_threshold() {
+        let env = Env::default();
+        let (contract_id, client, admin, _operator, p) = setup(&env);
+
+        // Set deviation to 10% (1000 bps)
+        env.mock_all_auths();
+        client.set_max_deviation_bps(&admin, &1000u64);
+
+        env.ledger().set_timestamp(1_000);
+        client.update_price(&admin, &p, &10000i128, &1u64);
+
+        // 4.99% increase should be allowed (within 10% limit)
+        client.update_price(&admin, &p, &10499i128, &2u64);
+
+        // >10% increase from 10499 should be rejected
+        // 11550 is ~10.01% above 10499
+        let result = client.try_update_price(&admin, &p, &11550i128, &3u64);
+        assert!(result.is_err());
+    }
+
+    // ── Event emission tests (Issue #1426) ─────────────────────────────────
+
+    #[test]
+    fn update_price_emits_source_reported_event() {
+        let env = Env::default();
+        env.ledger().set_timestamp(1_000);
+        let (contract_id, client, _admin, operator, p) = setup(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &operator,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "update_price",
+                args: (operator.clone(), p.clone(), 6170i128, 1u64).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client
+            .try_update_price(&operator, &p, &6170i128, &1u64)
+            .unwrap()
+            .unwrap();
+
+        let feed = client.get_price(&p);
+        assert_eq!(feed.price, 6170);
+        assert_eq!(feed.sequence, 1);
+    }
+
+    #[test]
+    fn update_price_emits_price_updated_event_in_single_source_mode() {
+        let env = Env::default();
+        env.ledger().set_timestamp(1_000);
+        let (contract_id, client, _admin, operator, p) = setup(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &operator,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "update_price",
+                args: (operator.clone(), p.clone(), 5000i128, 1u64).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client
+            .try_update_price(&operator, &p, &5000i128, &1u64)
+            .unwrap()
+            .unwrap();
+
+        let feed = client.get_price_unsafe(&p);
+        assert_eq!(feed.price, 5000);
+        assert_eq!(feed.decimals, 7);
+        assert_eq!(feed.updated_at, 1_000);
+    }
+
+    #[test]
+    fn multi_source_emits_aggregated_price_event() {
+        let env = Env::default();
+        env.ledger().set_timestamp(1_000);
+        let (_cid, client, _admin, p, src1, src2, src3) = setup_multi_source(&env);
+
+        env.mock_all_auths();
+        client.update_price(&src1, &p, &100i128, &1u64);
+        client.update_price(&src2, &p, &110i128, &1u64);
+        client.update_price(&src3, &p, &105i128, &1u64);
+
+        let feed = client.get_price(&p);
+        // Median of [100, 105, 110] = 105
+        assert_eq!(feed.price, 105);
+    }
+
+    #[test]
+    fn add_source_emits_source_added_event() {
+        let env = Env::default();
+        let (contract_id, client, admin, _operator, p) = setup(&env);
+        let src = Address::generate(&env);
+        env.mock_all_auths();
+
+        client.add_source(&admin, &p, &src);
+
+        let sources = client.get_sources(&p);
+        assert_eq!(sources.len(), 1);
+        assert!(sources.contains(&src));
+    }
+
+    #[test]
+    fn remove_source_emits_source_removed_event() {
+        let env = Env::default();
+        let (contract_id, client, admin, _operator, p) = setup(&env);
+        let src = Address::generate(&env);
+        env.mock_all_auths();
+
+        client.add_source(&admin, &p, &src);
+        assert_eq!(client.get_sources(&p).len(), 1);
+
+        client.remove_source(&admin, &p, &src);
+        assert_eq!(client.get_sources(&p).len(), 0);
+    }
 }

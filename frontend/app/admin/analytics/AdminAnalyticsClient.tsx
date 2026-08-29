@@ -12,6 +12,7 @@ import {
   Award,
 } from "lucide-react";
 import { KPICard } from "@/components/admin/KPICard";
+import { ErrorState, MoneyValue } from "@/components/ui/data-state";
 import dynamic from "next/dynamic";
 import {
   getAnalyticsOverview,
@@ -125,13 +126,26 @@ export function AdminAnalyticsClient() {
     loadData(true);
   };
 
-  // Sum total users across roles
+  // Sum total users across roles. Left null when the overview never arrived so
+  // the KPI renders a dash rather than a figure the platform did not report.
   const totalUsers = overview
     ? overview.usersByRole.tenant +
       overview.usersByRole.landlord +
       overview.usersByRole.agent +
       overview.usersByRole.admin
-    : 0;
+    : null;
+
+  const kpiStatus: "loading" | "error" | "ready" = loading
+    ? "loading"
+    : error || !overview
+      ? "error"
+      : "ready";
+
+  /** Non-monetary KPIs still refuse to invent a value; they just dash out. */
+  const renderMetric = (value: number | null | undefined, suffix = "") =>
+    value === null || value === undefined || !Number.isFinite(value)
+      ? "—"
+      : `${value.toLocaleString()}${suffix}`;
 
   // Format currency values
   const formatCurrency = (val: number) => {
@@ -167,35 +181,45 @@ export function AdminAnalyticsClient() {
 
       {/* Error state */}
       {error && (
-        <div className="border-3 border-red-600 bg-red-50 text-red-900 p-4 font-mono text-sm shadow-[4px_4px_0px_0px_rgba(220,38,38,1)] flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
-          <span>{error}</span>
-        </div>
+        <ErrorState
+          title="Analytics are unavailable"
+          description={error}
+          onRetry={() => loadData(true)}
+          retryLabel="Retry"
+        />
       )}
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <KPICard
           title="Total Platform Users"
-          value={loading ? "..." : totalUsers}
+          value={renderMetric(totalUsers)}
           change={12.4}
           changeLabel="vs last month"
           icon={<Users className="w-5 h-5 text-foreground" />}
           isLoading={loading}
-          sparklineData={[1200, 1310, 1290, 1380, 1490, 1550, 1690, totalUsers || 1792]}
+          sparklineData={[1200, 1310, 1290, 1380, 1490, 1550, 1690, totalUsers ?? 1792]}
         />
         <KPICard
           title="Active Tenant Deals"
-          value={loading ? "..." : overview?.activeDeals || 0}
+          value={renderMetric(overview?.activeDeals)}
           change={8.2}
           changeLabel="vs last month"
           icon={<Activity className="w-5 h-5 text-foreground" />}
           isLoading={loading}
-          sparklineData={[25, 30, 28, 32, 38, 35, 40, overview?.activeDeals || 42]}
+          sparklineData={[25, 30, 28, 32, 38, 35, 40, overview?.activeDeals ?? 42]}
         />
         <KPICard
           title="Revenue (MTD)"
-          value={loading ? "..." : formatCurrency(overview?.revenueMtd || 0)}
+          value={
+            <MoneyValue
+              status={kpiStatus}
+              amount={overview?.revenueMtd}
+              format={formatCurrency}
+              skeletonClassName="h-8 w-40"
+              unavailableLabel="Revenue unavailable"
+            />
+          }
           change={14.7}
           changeLabel="vs last month"
           icon={<TrendingUp className="w-5 h-5 text-foreground" />}
@@ -204,7 +228,7 @@ export function AdminAnalyticsClient() {
         />
         <KPICard
           title="Tenant Default Rate"
-          value={loading ? "..." : `${overview?.defaultRate || 0.0}%`}
+          value={renderMetric(overview?.defaultRate, "%")}
           change={-15.3} // default rate went down (good trend)
           changeLabel="vs last month"
           icon={<Percent className="w-5 h-5 text-foreground" />}
@@ -240,7 +264,7 @@ export function AdminAnalyticsClient() {
                   Inspection Pass Rate
                 </span>
                 <h4 className="font-mono text-2xl font-black mt-0.5">
-                  {loading ? "..." : `${quality?.inspectionPassRate || 92.5}%`}
+                  {loading ? "…" : renderMetric(quality?.inspectionPassRate, "%")}
                 </h4>
               </div>
             </div>
@@ -260,7 +284,7 @@ export function AdminAnalyticsClient() {
                   Avg Listing Quality
                 </span>
                 <h4 className="font-mono text-2xl font-black mt-0.5">
-                  {loading ? "..." : `${quality?.averageListingScore || 88.4}/100`}
+                  {loading ? "…" : renderMetric(quality?.averageListingScore, "/100")}
                 </h4>
               </div>
             </div>
@@ -280,7 +304,7 @@ export function AdminAnalyticsClient() {
                   Whistleblower Reports
                 </span>
                 <h4 className="font-mono text-2xl font-black mt-0.5">
-                  {loading ? "..." : `${quality?.whistleblowerReportRate || 4.2}%`}
+                  {loading ? "…" : renderMetric(quality?.whistleblowerReportRate, "%")}
                 </h4>
               </div>
             </div>

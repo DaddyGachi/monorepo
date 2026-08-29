@@ -143,7 +143,7 @@ impl TestAccessControlContract {
 mod tests {
     use super::{TestAccessControlContract, TestAccessControlContractClient, TestError};
     use soroban_sdk::testutils::{Address as _, Events, MockAuth, MockAuthInvoke};
-    use soroban_sdk::{Address, Env, IntoVal};
+    use soroban_sdk::{Address, Env, IntoVal, Symbol, TryIntoVal};
 
     fn setup(env: &Env) -> (Address, TestAccessControlContractClient<'_>) {
         let contract_id = env.register(TestAccessControlContract, ());
@@ -349,5 +349,191 @@ mod tests {
 
         let events = env.events().all();
         assert!(!events.is_empty(), "should emit unauthorized access event");
+    }
+
+    // ── Initialization ───────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic(expected = "already initialized")]
+    fn double_init_panics() {
+        let env = Env::default();
+        let contract_id = env.register(TestAccessControlContract, ());
+        let client = TestAccessControlContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+
+        client.init(&admin);
+        client.init(&admin);
+    }
+
+    #[test]
+    #[should_panic(expected = "admin not set")]
+    fn call_before_init_panics() {
+        let env = Env::default();
+        let contract_id = env.register(TestAccessControlContract, ());
+        let client = TestAccessControlContractClient::new(&env, &contract_id);
+        let caller = Address::generate(&env);
+
+        client.admin_only_operation(&caller);
+    }
+
+    #[test]
+    #[should_panic]
+    fn admin_only_operation_without_any_mocked_auth_fails() {
+        let env = Env::default();
+        let (admin, client) = setup(&env);
+
+        // No mock_auths / mock_all_auths configured — require_auth() must
+        // reject the call since no authorization was actually provided,
+        // proving the auth check is real and not just a logic-level compare.
+        client.admin_only_operation(&admin);
+    }
+
+    // ── set_operator authorization / overwrite ──────────────────────────────
+
+    #[test]
+    fn set_operator_unauthorized_fails() {
+        let env = Env::default();
+        let (_admin, client) = setup(&env);
+        let attacker = Address::generate(&env);
+        let target_operator = Address::generate(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &attacker,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "set_operator",
+                args: (attacker.clone(), target_operator.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+
+        let result = client.try_set_operator(&attacker, &target_operator);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            TestError::NotAuthorized,
+            "non-admin should not be able to set the operator"
+        );
+    }
+
+    #[test]
+    fn set_operator_overwrite_replaces_previous_operator() {
+        let env = Env::default();
+        let (admin, client) = setup(&env);
+        let operator1 = Address::generate(&env);
+        let operator2 = Address::generate(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "set_operator",
+                args: (admin.clone(), operator1.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client
+            .try_set_operator(&admin, &operator1)
+            .unwrap()
+            .unwrap();
+
+        env.mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "set_operator",
+                args: (admin.clone(), operator2.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client
+            .try_set_operator(&admin, &operator2)
+            .unwrap()
+            .unwrap();
+
+        env.mock_auths(&[MockAuth {
+            address: &operator1,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "admin_or_operator_operation",
+                args: (operator1.clone(),).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let stale_operator_result = client.try_admin_or_operator_operation(&operator1);
+        assert_eq!(
+            stale_operator_result.unwrap_err().unwrap(),
+            TestError::NotAuthorized,
+            "replaced operator must lose operator privileges"
+        );
+
+        env.mock_auths(&[MockAuth {
+            address: &operator2,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "admin_or_operator_operation",
+                args: (operator2.clone(),).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let new_operator_result = client.try_admin_or_operator_operation(&operator2);
+        assert!(
+            new_operator_result.is_ok(),
+            "new operator must gain operator privileges"
+        );
+    }
+
+    #[test]
+    fn admin_or_operator_denied_when_no_operator_ever_set() {
+        let env = Env::default();
+        let (_admin, client) = setup(&env);
+        let stranger = Address::generate(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &stranger,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "admin_or_operator_operation",
+                args: (stranger.clone(),).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+
+        let result = client.try_admin_or_operator_operation(&stranger);
+        assert_eq!(result.unwrap_err().unwrap(), TestError::NotAuthorized);
+    }
+
+    // ── Events ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn unauthorized_set_operator_emits_event_with_operation_name() {
+        let env = Env::default();
+        let (_admin, client) = setup(&env);
+        let attacker = Address::generate(&env);
+        let target_operator = Address::generate(&env);
+
+        env.mock_auths(&[MockAuth {
+            address: &attacker,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "set_operator",
+                args: (attacker.clone(), target_operator.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        let result = client.try_set_operator(&attacker, &target_operator);
+        assert_eq!(result.unwrap_err().unwrap(), TestError::NotAuthorized);
+
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        let topics: soroban_sdk::Vec<soroban_sdk::Val> = last.1.clone();
+        assert_eq!(topics.len(), 3);
+        let category: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(category, Symbol::new(&env, "access_control"));
+        let kind: Symbol = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(kind, Symbol::new(&env, "unauthorized"));
+        let denied_caller: Address = topics.get(2).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(denied_caller, attacker);
+        let operation: Symbol = last.2.clone().try_into_val(&env).unwrap();
+        assert_eq!(operation, Symbol::new(&env, "set_operator"));
     }
 }

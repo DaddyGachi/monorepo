@@ -3,6 +3,7 @@
 import { PaymentHistoryItem } from "@/lib/tenantApi";
 import { PaymentTimelineNode } from "@/components/payment/PaymentTimelineNode";
 import { Button } from "@/components/ui/button";
+import type { DisputeStatus } from "@/lib/disputeTimeline";
 
 interface PaymentTimelineProps {
   payments: PaymentHistoryItem[];
@@ -10,6 +11,9 @@ interface PaymentTimelineProps {
   onLoadMore: () => void;
   hasMore: boolean;
   isLoading: boolean;
+  disputeStatusByPayment?: Record<string, DisputeStatus | null>;
+  onReportProblem?: (paymentId: string) => void;
+  onViewDispute?: (paymentId: string) => void;
 }
 
 export function PaymentTimeline({
@@ -18,6 +22,9 @@ export function PaymentTimeline({
   onLoadMore,
   hasMore,
   isLoading,
+  disputeStatusByPayment = {},
+  onReportProblem,
+  onViewDispute,
 }: PaymentTimelineProps) {
   // Announce the most recent payment's status to assistive tech so live updates
   // (e.g. a payment moving to "Processing"/"Paid") are conveyed without sight.
@@ -38,11 +45,19 @@ export function PaymentTimeline({
               <PaymentTimelineNode
                 date={payment.transactionDate}
                 amount={payment.amount}
-                status={payment.status}
+                status={payment.status as any}
                 reference={payment.reference}
                 isOverdue={payment.isOverdue}
                 daysOverdue={payment.daysOverdue}
                 onDownloadReceipt={() => onDownloadReceipt(payment.reference)}
+                confirmedOnChain={payment.confirmedOnChain}
+                disputeStatus={disputeStatusByPayment[payment.id] ?? null}
+                onReportProblem={
+                  onReportProblem ? () => onReportProblem(payment.id) : undefined
+                }
+                onViewDispute={
+                  onViewDispute ? () => onViewDispute(payment.id) : undefined
+                }
               />
             </li>
           ))}

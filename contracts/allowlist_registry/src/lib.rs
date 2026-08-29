@@ -233,8 +233,8 @@ impl AllowlistRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::{Address as _, Ledger as _};
-    use soroban_sdk::{vec, Env, String};
+    use soroban_sdk::testutils::{Address as _, Events, Ledger as _};
+    use soroban_sdk::{vec, Env, String, TryIntoVal};
 
     fn deploy(env: &Env) -> (AllowlistRegistryClient, Address) {
         let id = env.register(AllowlistRegistry, ());
@@ -325,5 +325,299 @@ mod tests {
 
         let result = client.try_remove(&admin, &ghost);
         assert!(result.is_err());
+    }
+
+    // ── Initialization ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_double_initialize_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+
+        let result = client.try_initialize(&admin);
+        assert!(result.is_err());
+    }
+
+    /// `initialize` takes no `caller` argument and never calls `require_auth`
+    /// on the admin it is given, so any invocation succeeds even with zero
+    /// authorizations mocked. Documenting current behavior; flagged in the
+    /// PR as worth maintainer confirmation (is bootstrap meant to be
+    /// permissionless, relying on deploy-time control instead?).
+    #[test]
+    fn test_initialize_succeeds_without_any_mocked_auth() {
+        let env = Env::default();
+        let id = env.register(AllowlistRegistry, ());
+        let client = AllowlistRegistryClient::new(&env, &id);
+        let admin = Address::generate(&env);
+
+        client.initialize(&admin);
+        assert_eq!(client.member_count(), 0);
+    }
+
+    #[test]
+    fn test_add_before_initialize_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(AllowlistRegistry, ());
+        let client = AllowlistRegistryClient::new(&env, &id);
+        let caller = Address::generate(&env);
+        let target = Address::generate(&env);
+
+        let result = client.try_add(&caller, &target, &String::from_str(&env, "x"), &0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_before_initialize_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(AllowlistRegistry, ());
+        let client = AllowlistRegistryClient::new(&env, &id);
+        let caller = Address::generate(&env);
+        let target = Address::generate(&env);
+
+        let result = client.try_remove(&caller, &target);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bulk_add_before_initialize_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(AllowlistRegistry, ());
+        let client = AllowlistRegistryClient::new(&env, &id);
+        let caller = Address::generate(&env);
+        let a = Address::generate(&env);
+        let entries = vec![&env, (a.clone(), String::from_str(&env, "role_a"), 0u64)];
+
+        let result = client.try_bulk_add(&caller, &entries);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_queries_before_initialize_do_not_panic() {
+        let env = Env::default();
+        let id = env.register(AllowlistRegistry, ());
+        let client = AllowlistRegistryClient::new(&env, &id);
+        let target = Address::generate(&env);
+
+        assert!(!client.is_member(&target));
+        assert!(client.try_get_entry(&target).is_err());
+        assert_eq!(client.member_count(), 0);
+    }
+
+    // ── Authorization ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_remove_unauthorized_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        let stranger = Address::generate(&env);
+        let member = Address::generate(&env);
+        client.add(&admin, &member, &String::from_str(&env, "verified"), &0);
+
+        let result = client.try_remove(&stranger, &member);
+        assert!(result.is_err());
+        assert!(
+            client.is_member(&member),
+            "entry must survive a rejected unauthorized removal"
+        );
+    }
+
+    #[test]
+    fn test_bulk_add_unauthorized_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _admin) = deploy(&env);
+        let stranger = Address::generate(&env);
+        let a = Address::generate(&env);
+        let entries = vec![&env, (a.clone(), String::from_str(&env, "role_a"), 0u64)];
+
+        let result = client.try_bulk_add(&stranger, &entries);
+        assert!(result.is_err());
+        assert!(!client.is_member(&a));
+    }
+
+    // ── Duplicate / boundary behavior ────────────────────────────────────────
+
+    /// `add` on an address that is already registered overwrites the entry —
+    /// the `AlreadyExists` error variant is defined but never returned
+    /// anywhere in the contract. Documenting current (overwrite) behavior;
+    /// flagged in the PR as ambiguous — should re-adding an existing member
+    /// be rejected instead?
+    #[test]
+    fn test_add_duplicate_overwrites_existing_entry() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        let member = Address::generate(&env);
+
+        client.add(&admin, &member, &String::from_str(&env, "tier1"), &0);
+        client.add(&admin, &member, &String::from_str(&env, "tier2"), &0);
+
+        let entry = client.get_entry(&member);
+        assert_eq!(entry.label, String::from_str(&env, "tier2"));
+    }
+
+    #[test]
+    fn test_add_expiry_equal_to_now_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        env.ledger().with_mut(|l| l.timestamp = 1000);
+        let member = Address::generate(&env);
+        let now = env.ledger().timestamp();
+
+        let result = client.try_add(&admin, &member, &String::from_str(&env, "x"), &now);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_add_expiry_one_second_in_future_accepted() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        env.ledger().with_mut(|l| l.timestamp = 1000);
+        let member = Address::generate(&env);
+        let now = env.ledger().timestamp();
+
+        client.add(&admin, &member, &String::from_str(&env, "x"), &(now + 1));
+        assert!(client.is_member(&member));
+    }
+
+    #[test]
+    fn test_bulk_add_skips_already_expired_entries() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        env.ledger().with_mut(|l| l.timestamp = 1000);
+        let now = env.ledger().timestamp();
+
+        let live = Address::generate(&env);
+        let expired = Address::generate(&env);
+        let entries = vec![
+            &env,
+            (live.clone(), String::from_str(&env, "live"), 0u64),
+            (expired.clone(), String::from_str(&env, "expired"), now),
+        ];
+
+        let count = client.bulk_add(&admin, &entries);
+        assert_eq!(count, 1);
+        assert!(client.is_member(&live));
+        assert!(!client.is_member(&expired));
+    }
+
+    #[test]
+    fn test_get_entry_on_expired_returns_not_found() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        let member = Address::generate(&env);
+        let expiry = env.ledger().timestamp() + 1;
+        client.add(&admin, &member, &String::from_str(&env, "temp"), &expiry);
+
+        env.ledger().with_mut(|l| l.timestamp += 10);
+        let result = client.try_get_entry(&member);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_member_count_excludes_expired_entries() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        let live = Address::generate(&env);
+        let expiring = Address::generate(&env);
+        let expiry = env.ledger().timestamp() + 1;
+
+        client.add(&admin, &live, &String::from_str(&env, "live"), &0);
+        client.add(
+            &admin,
+            &expiring,
+            &String::from_str(&env, "expiring"),
+            &expiry,
+        );
+        assert_eq!(client.member_count(), 2);
+
+        env.ledger().with_mut(|l| l.timestamp += 10);
+        assert_eq!(client.member_count(), 1);
+    }
+
+    #[test]
+    fn test_remove_same_address_twice_fails_second_time() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        let member = Address::generate(&env);
+        client.add(&admin, &member, &String::from_str(&env, "verified"), &0);
+
+        client.remove(&admin, &member);
+        let result = client.try_remove(&admin, &member);
+        assert!(result.is_err());
+    }
+
+    // ── Events ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_add_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        let member = Address::generate(&env);
+
+        client.add(&admin, &member, &String::from_str(&env, "verified"), &0);
+
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        let topics: soroban_sdk::Vec<soroban_sdk::Val> = last.1.clone();
+        let name: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(name, Symbol::new(&env, "add"));
+        let event_address: Address = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(event_address, member);
+    }
+
+    #[test]
+    fn test_remove_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        let member = Address::generate(&env);
+        client.add(&admin, &member, &String::from_str(&env, "verified"), &0);
+
+        client.remove(&admin, &member);
+
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        let topics: soroban_sdk::Vec<soroban_sdk::Val> = last.1.clone();
+        let name: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(name, Symbol::new(&env, "remove"));
+        let event_address: Address = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(event_address, member);
+    }
+
+    #[test]
+    fn test_bulk_add_emits_event_with_count() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = deploy(&env);
+        let a = Address::generate(&env);
+        let b = Address::generate(&env);
+        let entries = vec![
+            &env,
+            (a.clone(), String::from_str(&env, "a"), 0u64),
+            (b.clone(), String::from_str(&env, "b"), 0u64),
+        ];
+
+        client.bulk_add(&admin, &entries);
+
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        let topics: soroban_sdk::Vec<soroban_sdk::Val> = last.1.clone();
+        let name: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(name, Symbol::new(&env, "bulk_add"));
+        let count: u32 = last.2.clone().try_into_val(&env).unwrap();
+        assert_eq!(count, 2);
     }
 }

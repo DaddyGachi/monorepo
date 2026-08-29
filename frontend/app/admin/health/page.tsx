@@ -25,6 +25,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import BackendHealthCompact from "@/components/BackendHealthCompact";
+import JobHealthPanel from "@/components/admin/JobHealthPanel";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -81,12 +83,8 @@ type PanelState<T> =
 
 // ── Mock fetch helpers (replace with real apiFetch calls) ─────────────────────
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-
 async function fetchHealthSnapshot(): Promise<HealthSnapshot> {
-  const res = await fetch(`${BACKEND}/api/admin/health-snapshot`, {
-    headers: { "x-admin-secret": process.env.NEXT_PUBLIC_ADMIN_SECRET ?? "" },
-  });
+  const res = await fetch(`/api/admin/health-snapshot`);
   if (!res.ok) throw new Error(`Health snapshot failed: ${res.status}`);
   return res.json();
 }
@@ -102,9 +100,7 @@ async function fetchAlerts(params: {
   if (params.status)   q.set("status",   params.status);
   if (params.cursor)   q.set("cursor",   params.cursor);
   q.set("limit", String(params.limit ?? 20));
-  const res = await fetch(`${BACKEND}/api/admin/alerts?${q}`, {
-    headers: { "x-admin-secret": process.env.NEXT_PUBLIC_ADMIN_SECRET ?? "" },
-  });
+  const res = await fetch(`/api/admin/alerts?${q}`);
   if (!res.ok) throw new Error(`Alerts failed: ${res.status}`);
   return res.json();
 }
@@ -278,14 +274,17 @@ export default function AdminHealthPage() {
             )}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => { void loadSnapshot(); void loadAlerts(); }}
-        >
-          <RefreshCw className="h-4 w-4 mr-1" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <BackendHealthCompact />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { void loadSnapshot(); void loadAlerts(); }}
+          >
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Service uptime panels */}
@@ -313,6 +312,9 @@ export default function AdminHealthPage() {
           </div>
         )}
       </section>
+
+      {/* Background job health — surfaces jobs that have stopped running at all */}
+      <JobHealthPanel />
 
       {/* Queue depth + error rate */}
       {snapshot.type === "ok" && (

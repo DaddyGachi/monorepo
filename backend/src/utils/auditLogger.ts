@@ -117,6 +117,16 @@ export type AuditEventType =
   // Data privacy / erasure
   | 'USER_ERASURE_REQUESTED'
   | 'USER_ERASURE_COMPLETED'
+  // Credit bureau
+  | 'CREDIT_REPORT_PULLED'
+  | 'CREDIT_REPORT_VIEWED'
+  // Rental agreements / e-signature
+  | 'AGREEMENT_GENERATED'
+  | 'AGREEMENT_SIGNATURE_REQUESTED'
+  | 'AGREEMENT_SIGNED'
+  | 'AGREEMENT_FULLY_EXECUTED'
+  // Landlord verification
+  | 'LANDLORD_VERIFICATION_UPDATED'
   // State-changing operations (auto-generated)
   | 'STATE_CHANGED'
   | 'STATE_DELETED'

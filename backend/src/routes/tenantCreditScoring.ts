@@ -13,7 +13,7 @@ const scoringService = new TenantCreditScoringService()
 export function createTenantCreditScoringRouter() {
   const router = Router()
 
-  function requireAdminOrCompliance(req: Request): AuthenticatedRequest {
+  function requireAdminOrCompliance(req: Request): NonNullable<AuthenticatedRequest['user']> {
     const user = (req as any).user
     if (!user) {
       throw new AppError(ErrorCode.UNAUTHORIZED, 401, 'Authentication required')

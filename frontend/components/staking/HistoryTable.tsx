@@ -6,6 +6,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { getStakingHistory, type StakingHistoryItem } from "@/lib/config";
 import { Loader2, AlertCircle, History, ArrowUpRight, ArrowDownLeft, Gift, ExternalLink, RefreshCw } from "lucide-react";
 import { formatUsdc } from "./PositionCard";
+import {
+  ErrorState,
+  ListRowSkeleton,
+  LoadingState,
+} from "@/components/ui/data-state";
 
 interface HistoryTableProps {
   walletAddress?: string | null;
@@ -116,24 +121,19 @@ export function HistoryTable({ walletAddress }: HistoryTableProps) {
       </CardHeader>
       <CardContent className="p-0">
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center space-y-3">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground font-medium">Retrieving transaction history...</p>
-          </div>
+          <LoadingState label="Loading staking history" className="space-y-3 p-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <ListRowSkeleton key={i} />
+            ))}
+          </LoadingState>
         ) : error ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center px-4 space-y-3">
-            <AlertCircle className="h-8 w-8 text-destructive" />
-            <div>
-              <p className="text-sm font-bold text-foreground">{error}</p>
-              <button
-                type="button"
-                onClick={fetchHistory}
-                className="mt-2 text-xs font-semibold text-primary hover:underline"
-              >
-                Try refreshing the ledger
-              </button>
-            </div>
-          </div>
+          <ErrorState
+            className="m-4"
+            title="Staking history is unavailable"
+            description={error}
+            onRetry={fetchHistory}
+            retryLabel="Reload ledger"
+          />
         ) : history.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center px-4 space-y-4">
             <div className="rounded-full bg-muted p-4 border border-foreground/5">
@@ -148,7 +148,7 @@ export function HistoryTable({ walletAddress }: HistoryTableProps) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <Table>
+            <Table aria-label="Staking transaction history">
               <TableHeader className="bg-muted/40">
                 <TableRow>
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Date & Time</TableHead>

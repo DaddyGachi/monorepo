@@ -32,8 +32,8 @@ export const envSchema = z.object({
   FLUTTERWAVE_SECRET: z.string().optional(),
   MANUAL_ADMIN_SECRET: z.string().optional(),
   FX_RATE_NGN_PER_USDC: z.coerce.number().positive().default(1600),
-  /** NGN/USDC conversion: `stub` (FX_RATE only), `http` (CONVERSION_RATE_URL required), `fallback` (HTTP then stub). */
-  CONVERSION_PROVIDER: z.enum(['stub', 'http', 'fallback']).default('stub'),
+  /** NGN/USDC conversion: `stub` (FX_RATE only), `http` (CONVERSION_RATE_URL required), `fallback` (HTTP then stub), `oracle` (on-chain oracle_price_feeds via SOROBAN_ORACLE_PRICE_FEEDS_ID, then stub). */
+  CONVERSION_PROVIDER: z.enum(['stub', 'http', 'fallback', 'oracle']).default('stub'),
   /** JSON endpoint returning { "fxRateNgnPerUsdc": number } (or `rate` / `ngnPerUsdc`). Required when CONVERSION_PROVIDER=http. */
   CONVERSION_RATE_URL: z.preprocess(
     (v) => (v === '' || v === undefined ? undefined : v),
@@ -140,7 +140,7 @@ export const envSchema = z.object({
     if (data.NODE_ENV !== 'production') return true
     return !!data.MANUAL_ADMIN_SECRET
   }, {
-    message: 'MANUAL_ADMIN_SECRET is required in production for webhook signature validation',
+    message: 'MANUAL_ADMIN_SECRET is required in production to guard legacy shared-secret admin routes',
     path: ['MANUAL_ADMIN_SECRET'],
   })
   .refine((data) => {

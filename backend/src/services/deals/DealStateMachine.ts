@@ -3,14 +3,19 @@
  * Enforces valid deal lifecycle transitions and manages state-related events
  */
 
-import { DealStatus } from "../../models/deal.js";
+import { DealStatus, DealWithSchedule, ScheduleItem } from "../../models/deal.js";
 import { AppError } from "../../errors/AppError.js";
 import { ErrorCode } from "../../errors/errorCodes.js";
-import { auditLog } from "../../repositories/AuditRepository.js";
+import { auditLog } from "../../utils/auditLogger.js";
 import { outboxStore } from "../../outbox/index.js";
 import { TxType } from "../../outbox/types.js";
 import { logger } from "../../utils/logger.js";
 import { isDealSyncEnabled, mapDealStatusToSyncTarget } from "./dealSyncConfig.js";
+import {
+  dealIdToRentToOwnBytes32,
+  computeEquityCapUsdc,
+  ngnToUsdcDecimal,
+} from "./rentToOwnConversion.js";
 
 export interface DealWithStatusHistory {
   dealId: string;
@@ -78,17 +83,21 @@ export class DealStateMachine {
     );
 
     // Audit log
-    await auditLog({
-      actor,
-      action: `DEAL_STATUS_CHANGED_${targetStatus}`,
-      resourceType: "deal",
-      resourceId: dealId,
-      details: {
+    auditLog(
+      "DEAL_STATUS_CHANGED",
+      {
+        userId: actor,
+        requestId: "unknown",
+        ip: "unknown",
+        actorType: actor === "system" ? "system" : "user",
+      },
+      {
+        dealId,
         from: currentStatus,
         to: targetStatus,
         reason,
       },
-    });
+    );
 
     return targetStatus;
   }
@@ -152,6 +161,66 @@ export class DealStateMachine {
     if (to === DealStatus.COMPLETED) {
       logger.info(`Triggered payout settlement for deal ${dealId}`);
     }
+  }
+
+  /**
+   * Enqueues an on-chain rent_to_own `register_deal` call for a newly
+   * created deal. Delivered asynchronously via the outbox/RentToOwnSyncWorker
+   * pattern — never called synchronously from the request handler.
+   */
+  async enqueueRentToOwnRegistration(deal: DealWithSchedule): Promise<void> {
+    if (!isDealSyncEnabled()) return;
+
+    await outboxStore.create({
+      txType: TxType.RENT_TO_OWN_DEAL_REGISTERED,
+      source: "rent_to_own",
+      ref: `${deal.dealId}:register`,
+      eventType: "RENT_TO_OWN_DEAL_REGISTERED",
+      aggregateType: "deal",
+      aggregateId: deal.dealId,
+      payload: {
+        dealId: deal.dealId,
+        contractDealId: dealIdToRentToOwnBytes32(deal.dealId),
+        tenantId: deal.tenantId,
+        propertyValueUsdc: computeEquityCapUsdc(deal),
+        monthlyEquityUsdc: ngnToUsdcDecimal(deal.financedAmountNgn / deal.termMonths),
+        totalPaymentsRequired: deal.termMonths,
+      },
+    });
+    logger.info(`Enqueued rent_to_own registration for deal ${deal.dealId}`);
+  }
+
+  /**
+   * Enqueues an on-chain rent_to_own `record_equity_payment` call for a
+   * schedule item just accepted as paid. Callers must verify the payment
+   * does not exceed the equity cap (see rentToOwnConversion.wouldExceedEquityCap)
+   * *before* calling this — enqueuing here does not re-check the cap.
+   */
+  async enqueueRentToOwnEquityPayment(
+    deal: DealWithSchedule,
+    item: Pick<ScheduleItem, "period" | "amountNgn">,
+  ): Promise<void> {
+    if (!isDealSyncEnabled()) return;
+
+    const amountUsdc = ngnToUsdcDecimal(item.amountNgn);
+    await outboxStore.create({
+      txType: TxType.RENT_TO_OWN_EQUITY_PAYMENT,
+      source: "rent_to_own",
+      ref: `${deal.dealId}:equity:${item.period}`,
+      eventType: "RENT_TO_OWN_EQUITY_PAYMENT",
+      aggregateType: "deal",
+      aggregateId: deal.dealId,
+      payload: {
+        dealId: deal.dealId,
+        contractDealId: dealIdToRentToOwnBytes32(deal.dealId),
+        period: item.period,
+        rentAmountUsdc: amountUsdc,
+        equityAmountUsdc: amountUsdc,
+      },
+    });
+    logger.info(
+      `Enqueued rent_to_own equity payment for deal ${deal.dealId} period ${item.period}`,
+    );
   }
 
   /**

@@ -6,7 +6,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { X, Menu, LogOut, LayoutDashboard, User } from "lucide-react"
+import { X, Menu, LogOut, LayoutDashboard, User, Search } from "lucide-react"
 import useAuthStore from "@/store/useAuthStore"
 
 interface MobileMenuProps {
@@ -15,9 +15,10 @@ interface MobileMenuProps {
   isAuthenticated?: boolean
   user?: { name?: string; email?: string } | null
   hydrated?: boolean
+  onSearchOpen?: () => void
 }
 
-export function MobileMenu({ navLinks, pathname, isAuthenticated: authProp, user: userProp, hydrated }: Readonly<MobileMenuProps>) {
+export function MobileMenu({ navLinks, pathname, isAuthenticated: authProp, user: userProp, hydrated, onSearchOpen }: Readonly<MobileMenuProps>) {
   const [isOpen, setIsOpen] = useState(false)
   const router = useRouter()
   const storeAuth = useAuthStore()
@@ -73,6 +74,21 @@ export function MobileMenu({ navLinks, pathname, isAuthenticated: authProp, user
             
             <nav className="h-full overflow-y-auto py-4">
               <div className="space-y-2 px-4">
+                <button
+                  onClick={() => {
+                    setIsOpen(false)
+                    onSearchOpen?.()
+                  }}
+                  className="w-full flex items-center gap-3 py-3 px-4 text-lg font-medium transition-colors hover:text-primary min-h-11 border-2 border-transparent hover:border-foreground/20 text-foreground"
+                  aria-label="Open global search"
+                >
+                  <Search className="h-5 w-5 shrink-0" />
+                  <span>Search</span>
+                  <kbd className="ml-auto inline-flex items-center gap-0.5 rounded-sm border border-foreground/30 px-1.5 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">
+                    <span className="text-[9px]">&#8984;</span>K
+                  </kbd>
+                </button>
+                <div className="border-t-2 border-foreground/10 pt-2" />
                 {navLinks.map((link) => (
                   <Link
                     key={link.href}

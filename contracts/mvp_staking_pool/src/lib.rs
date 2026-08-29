@@ -1187,6 +1187,162 @@ mod stake_partition {
         assert_eq!(client.used_stake(&user), 500i128);
         assert_eq!(client.staked_balance(&user), 500i128);
     }
+
+    // -------------------------------------------------------------------------
+    // Invariant: used + unused == total_staked across a multi-op sequence
+    // -------------------------------------------------------------------------
+    #[test]
+    fn invariant_used_plus_unused_equals_total_staked_across_ops() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, token) = setup(&env);
+        let user = Address::generate(&env);
+        StellarAssetClient::new(&env, &token).mint(&user, &1_000i128);
+        StellarAssetClient::new(&env, &token).mint(&admin, &1_000i128);
+
+        // Stake 500, invariant holds
+        client.stake(&user, &500i128);
+        assert_eq!(
+            client.used_stake(&user) + client.unused_stake(&user),
+            client.staked_balance(&user)
+        );
+
+        // Utilize 200, invariant still holds
+        client.utilize_stake(&admin, &user, &200i128);
+        assert_eq!(client.used_stake(&user), 200i128);
+        assert_eq!(client.unused_stake(&user), 300i128);
+        assert_eq!(
+            client.used_stake(&user) + client.unused_stake(&user),
+            client.staked_balance(&user)
+        );
+
+        // Fund rewards and claim — does not change stake invariant
+        client.fund_rewards(&admin, &100i128);
+        let claimable = client.claimable(&user);
+        assert!(claimable > 0);
+        let claimed = client.claim(&user);
+        assert_eq!(claimed, claimable);
+        assert_eq!(
+            client.used_stake(&user) + client.unused_stake(&user),
+            client.staked_balance(&user)
+        );
+
+        // Unstake 100 from unused portion, invariant holds
+        client.unstake(&user, &100i128);
+        assert_eq!(client.unused_stake(&user), 200i128);
+        assert_eq!(client.used_stake(&user), 200i128);
+        assert_eq!(client.staked_balance(&user), 400i128);
+        assert_eq!(
+            client.used_stake(&user) + client.unused_stake(&user),
+            client.staked_balance(&user)
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Over-utilization is rejected
+    // -------------------------------------------------------------------------
+    #[test]
+    fn utilize_stake_rejects_over_utilization() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, token) = setup(&env);
+        let user = Address::generate(&env);
+        StellarAssetClient::new(&env, &token).mint(&user, &100i128);
+        client.stake(&user, &100i128);
+
+        // Exact amount succeeds
+        client.utilize_stake(&admin, &user, &100i128);
+        // Any further utilization should fail
+        let err = client
+            .try_utilize_stake(&admin, &user, &1i128)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ContractError::UtilizationExceedsUnused);
+    }
+
+    #[test]
+    fn utilize_stake_rejects_exceeding_unused_after_partial_utilization() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, token) = setup(&env);
+        let user = Address::generate(&env);
+        StellarAssetClient::new(&env, &token).mint(&user, &200i128);
+        client.stake(&user, &200i128);
+        // Utilize 150; only 50 unused left
+        client.utilize_stake(&admin, &user, &150i128);
+        // Try to utilize 100 more — should fail
+        let err = client
+            .try_utilize_stake(&admin, &user, &100i128)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ContractError::UtilizationExceedsUnused);
+    }
+
+    // -------------------------------------------------------------------------
+    // Unstaking utilized stake is rejected
+    // -------------------------------------------------------------------------
+    #[test]
+    fn unstake_rejects_withdrawal_of_utilized_stake() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, token) = setup(&env);
+        let user = Address::generate(&env);
+        StellarAssetClient::new(&env, &token).mint(&user, &200i128);
+        client.stake(&user, &200i128);
+        // Utilize 150; only 50 unused
+        client.utilize_stake(&admin, &user, &150i128);
+        // Unstake 51 — exceeds unused (50)
+        let err = client.try_unstake(&user, &51i128).unwrap_err().unwrap();
+        assert_eq!(err, ContractError::InsufficientUnusedStake);
+    }
+
+    // -------------------------------------------------------------------------
+    // Reward claim accounting is correct under partial utilization
+    // -------------------------------------------------------------------------
+    #[test]
+    fn rewards_accrue_on_full_balance_even_when_partially_utilized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, token) = setup(&env);
+        let user = Address::generate(&env);
+        StellarAssetClient::new(&env, &token).mint(&user, &1_000i128);
+        StellarAssetClient::new(&env, &token).mint(&admin, &1_000i128);
+
+        client.stake(&user, &1_000i128);
+        // Utilize half
+        client.utilize_stake(&admin, &user, &500i128);
+        // Fund 1000 tokens as rewards — user is the sole staker so gets all
+        client.fund_rewards(&admin, &1_000i128);
+        assert_eq!(client.claimable(&user), 1_000i128);
+        let claimed = client.claim(&user);
+        assert_eq!(claimed, 1_000i128);
+        assert_eq!(client.claimable(&user), 0i128);
+
+        // After claim, stake invariant still holds
+        assert_eq!(
+            client.used_stake(&user) + client.unused_stake(&user),
+            client.staked_balance(&user)
+        );
+    }
+
+    #[test]
+    fn reward_claim_zero_after_double_claim() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, token) = setup(&env);
+        let user = Address::generate(&env);
+        StellarAssetClient::new(&env, &token).mint(&user, &500i128);
+        StellarAssetClient::new(&env, &token).mint(&admin, &500i128);
+
+        client.stake(&user, &500i128);
+        client.utilize_stake(&admin, &user, &200i128);
+        client.fund_rewards(&admin, &500i128);
+
+        let first = client.claim(&user);
+        assert_eq!(first, 500i128);
+        let second = client.claim(&user);
+        assert_eq!(second, 0i128);
+    }
 }
 
 // ============================================================================

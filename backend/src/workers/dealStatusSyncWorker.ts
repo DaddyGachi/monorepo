@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js'
 import { outboxStore } from '../outbox/store.js'
 import { OutboxStatus, TxType, type OutboxItem } from '../outbox/types.js'
 import { isDealSyncEnabled } from '../services/deals/dealSyncConfig.js'
+import { dealIdToRentToOwnBytes32, toSorobanReasonSymbol } from '../services/deals/rentToOwnConversion.js'
 
 const MAX_DEAL_SYNC_RETRIES = 5
 const BASE_BACKOFF_MS = 1000
@@ -64,7 +65,7 @@ export class DealStatusSyncWorker {
 
     for (const item of items) {
       if (item.status === OutboxStatus.FAILED && !shouldRetry(item)) {
-        if (item.retryCount >= MAX_DEAL_SYNC_RETRIES && item.status !== OutboxStatus.DEAD) {
+        if (item.retryCount >= MAX_DEAL_SYNC_RETRIES) {
           await outboxStore.markDead(item.id, 'Max deal sync retry count reached')
           logger.error('Deal status sync dead-lettered', {
             outboxId: item.id,
@@ -98,6 +99,23 @@ export class DealStatusSyncWorker {
         newStatus,
         actor,
       })
+
+      // rent_to_own has no "activate" call (register_deal already starts the
+      // deal Active), so only mirror the completed/defaulted transitions —
+      // reusing this same DEAL_STATUS_CHANGED outbox item rather than a
+      // parallel enqueue mechanism.
+      if (newStatus === 'completed' && this.adapter.completeRentToOwnDeal) {
+        await this.adapter.completeRentToOwnDeal({
+          dealId,
+          contractDealId: dealIdToRentToOwnBytes32(dealId),
+        })
+      } else if (newStatus === 'defaulted' && this.adapter.defaultRentToOwnDeal) {
+        await this.adapter.defaultRentToOwnDeal({
+          dealId,
+          contractDealId: dealIdToRentToOwnBytes32(dealId),
+          reason: toSorobanReasonSymbol(payload.reason as string | undefined),
+        })
+      }
 
       await outboxStore.updateStatus(item.id, OutboxStatus.SENT)
       logger.info('Deal status sync succeeded', { outboxId: item.id, dealId, newStatus })

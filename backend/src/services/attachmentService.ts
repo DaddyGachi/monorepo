@@ -106,7 +106,15 @@ export async function getAttachmentDownloadUrl(
 export async function stripImageExif(buffer: Buffer): Promise<Buffer> {
   try {
     const { exiftool } = await import('exiftool-vendored')
-    return await exiftool.deleteMetadata(buffer, ['gps:*', 'exif:*'])
+    const { writeFile, readFile, unlink } = await import('node:fs/promises')
+    const tmpPath = `/tmp/exif_${randomUUID()}`
+    await writeFile(tmpPath, buffer)
+    try {
+      await exiftool.deleteAllTags(tmpPath)
+      return await readFile(tmpPath)
+    } finally {
+      await unlink(tmpPath).catch(() => {})
+    }
   } catch {
     try {
       const { execSync } = await import('node:child_process')

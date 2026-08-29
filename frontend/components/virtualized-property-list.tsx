@@ -7,6 +7,9 @@ interface VirtualizedPropertyListProps {
   onSaveToggle?: (id: string) => Promise<void>
   savedListingIds?: string[]
   isLoading?: boolean
+  showCompare?: boolean
+  initialScrollTop?: number
+  onScrollTopChange?: (scrollTop: number) => void
 }
 
 const ITEM_HEIGHT = 400
@@ -17,6 +20,9 @@ export function VirtualizedPropertyList({
   onSaveToggle,
   savedListingIds = [],
   isLoading = false,
+  showCompare = false,
+  initialScrollTop = 0,
+  onScrollTopChange,
 }: VirtualizedPropertyListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -24,10 +30,19 @@ export function VirtualizedPropertyList({
 
   useEffect(() => {
     const container = containerRef.current
+    if (!container || initialScrollTop <= 0) return
+
+    container.scrollTop = initialScrollTop
+    container.dispatchEvent(new Event('scroll'))
+  }, [initialScrollTop])
+
+  useEffect(() => {
+    const container = containerRef.current
     if (!container) return
 
     const handleScroll = () => {
       setScrollTop(container.scrollTop)
+      onScrollTopChange?.(container.scrollTop)
     }
 
     const resizeObserver = new ResizeObserver(() => {
@@ -43,7 +58,7 @@ export function VirtualizedPropertyList({
       container.removeEventListener('scroll', handleScroll)
       resizeObserver.disconnect()
     }
-  }, [])
+  }, [onScrollTopChange])
 
   const visibleRange = useMemo(() => {
     const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN_COUNT)
@@ -115,6 +130,7 @@ export function VirtualizedPropertyList({
                   property={propertyListingToCard(property)}
                   isFavorited={savedListingIds.includes(property.listingId)}
                   onFavoriteChange={() => handleSaveToggle(property.listingId)}
+                  showCompare={showCompare}
                 />
               </div>
             ))}

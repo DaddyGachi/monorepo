@@ -1,10 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  EmptyState,
+  ErrorState,
+  ListRowSkeleton,
+  LoadingState,
+  StatCardSkeleton,
+} from "@/components/ui/data-state";
 import {
   Plus,
   TrendingUp,
@@ -14,7 +21,6 @@ import {
   Star,
   DollarSign,
   Home,
-  Loader2,
 } from "lucide-react";
 import {
   getWhistleblowerDashboardData,
@@ -33,30 +39,45 @@ export default function WhistleblowerDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<WhistleblowerDashboardData | null>(null);
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        setLoading(true);
-        const result = await getWhistleblowerDashboardData();
-        setData(result);
-        setError(null);
-      } catch (err) {
-        console.error("Failed to fetch whistleblower data:", err);
-        setError(
-          "Failed to connect to live data. Please ensure the backend is running.",
-        );
-      } finally {
-        setLoading(false);
-      }
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await getWhistleblowerDashboardData();
+      setData(result);
+      setError(null);
+    } catch (err) {
+      console.error("Failed to fetch whistleblower data:", err);
+      setError(
+        "Failed to connect to live data. Please ensure the backend is running.",
+      );
+    } finally {
+      setLoading(false);
     }
-    fetchData();
   }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   if (loading) {
     return (
-      <div className="flex h-screen w-full flex-col items-center justify-center bg-background">
-        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="font-mono text-lg font-bold">Loading your dashboard...</p>
+      <div className="min-h-screen bg-background p-4 pt-24 md:p-8 md:pt-28">
+        <LoadingState
+          label="Loading your whistleblower dashboard"
+          className="mx-auto max-w-5xl space-y-8"
+        >
+          <div className="grid gap-4 md:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <StatCardSkeleton key={`wb-stat-${index}`} />
+            ))}
+          </div>
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <ListRowSkeleton key={`wb-row-${index}`} />
+            ))}
+          </div>
+        </LoadingState>
       </div>
     );
   }
@@ -68,20 +89,14 @@ export default function WhistleblowerDashboard() {
 
   if (error && !data) {
     return (
-      <div className="flex h-screen w-full flex-col items-center justify-center bg-background p-4">
-        <div className="max-w-md w-full border-3 border-destructive bg-destructive/10 p-8 text-center shadow-[8px_8px_0px_0px_rgba(26,26,26,1)]">
-          <AlertCircle className="mx-auto h-16 w-16 text-destructive mb-4" />
-          <h1 className="font-mono text-2xl font-black mb-2 text-destructive">
-            Connection Error
-          </h1>
-          <p className="text-destructive/80 mb-6">{error}</p>
-          <Button
-            className="w-full border-3 border-foreground bg-primary font-bold shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]"
-            onClick={() => window.location.reload()}
-          >
-            Retry Connection
-          </Button>
-        </div>
+      <div className="flex min-h-screen w-full flex-col items-center justify-center bg-background p-4">
+        <ErrorState
+          className="w-full max-w-md"
+          title="We couldn't reach your dashboard"
+          description={error}
+          onRetry={fetchData}
+          retryLabel="Retry connection"
+        />
       </div>
     );
   }
@@ -234,15 +249,15 @@ export default function WhistleblowerDashboard() {
 
             <div className="space-y-4">
               {listings.length === 0 ? (
-                <div className="border-3 border-foreground border-dashed p-12 text-center bg-muted/30">
-                  <Home className="mx-auto h-12 w-12 text-muted-foreground mb-4 opacity-50" />
-                  <p className="font-mono text-lg font-bold">
-                    No active listings
-                  </p>
-                  <p className="text-muted-foreground mt-2">
-                    Report your first apartment to start earning!
-                  </p>
-                </div>
+                <EmptyState
+                  icon={Home}
+                  title="No active listings"
+                  description="Report a vacant apartment you know of — you earn a reward once a tenant rents it through Shelterflex."
+                  action={{
+                    label: "Report an apartment",
+                    href: "/whistleblower/report",
+                  }}
+                />
               ) : (
                 listings.map((listing) => (
                   <Card
@@ -308,11 +323,15 @@ export default function WhistleblowerDashboard() {
             </h2>
             <div className="space-y-3">
               {earnings.length === 0 ? (
-                <div className="border-3 border-foreground border-dashed p-8 text-center bg-muted/30">
-                  <p className="text-muted-foreground italic">
-                    No recent earnings records found.
-                  </p>
-                </div>
+                <EmptyState
+                  icon={DollarSign}
+                  title="No earnings yet"
+                  description="Rewards land here after a tenant you reported completes their first payment."
+                  action={{
+                    label: "Report an apartment",
+                    href: "/whistleblower/report",
+                  }}
+                />
               ) : (
                 earnings.map((earning, idx) => (
                   <Card

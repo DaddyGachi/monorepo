@@ -8,8 +8,9 @@ The platform combines three layers:
 - **Financing Engine** — Installment-based rent with tiered interest plans (3, 6, or 12 months)
 - **Risk & Credit Assessment** — Tenant screening via income verification, bank statements, and alternative data
 
-### Platform Stakeholders
+### Platform Stakeholders Part
 
+ 
 
 | Role | Description |
 |---|---|

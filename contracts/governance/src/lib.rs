@@ -424,8 +424,8 @@ mod tests {
 
     use super::*;
     use soroban_sdk::{
-        testutils::{Address as _, Ledger},
-        Env,
+        testutils::{Address as _, Events, Ledger},
+        Env, TryIntoVal,
     };
 
     fn setup(env: &Env, total_staked: i128) -> (Address, GovernanceClient<'_>) {
@@ -750,5 +750,576 @@ mod tests {
         let status = client.finalize_proposal(&pid);
         // Should pass because quorum was based on 1_000_000 snapshot, not new 10_000_000
         assert!(matches!(status, ProposalStatus::Passed));
+    }
+
+    // ── Added coverage (issue #1421) ────────────────────────────────────────
+    // Authorization boundaries, initialization edge cases, failure/boundary
+    // paths, and event assertions. Event-assertion helper pattern is borrowed
+    // from staking_pool/rent_payments tests (this crate had no prior event
+    // assertions); it uses `env.events().all()` + `try_into_val`.
+
+    // --- Authorization: privileged (admin-gated) functions -----------------
+
+    #[test]
+    fn set_total_staked_unauthorized_caller_rejected() {
+        // `set_total_staked` is admin-gated via require_admin. With
+        // mock_all_auths the caller's require_auth passes, so the identity
+        // check (`caller != admin`) is what must reject a non-admin.
+        let env = Env::default();
+        let (_admin, client) = setup(&env, 1_000_000);
+
+        let attacker = Address::generate(&env);
+        let result = client.try_set_total_staked(&attacker, &42);
+        assert_eq!(result.unwrap_err().unwrap(), ContractError::NotAuthorized);
+    }
+
+    #[test]
+    fn set_voter_stake_unauthorized_caller_rejected() {
+        // `set_voter_stake` is admin-gated; a non-admin must not be able to
+        // grant voting weight (governance-capture vector).
+        let env = Env::default();
+        let (_admin, client) = setup(&env, 1_000_000);
+
+        let attacker = Address::generate(&env);
+        let victim = Address::generate(&env);
+        let result = client.try_set_voter_stake(&attacker, &victim, &1_000_000);
+        assert_eq!(result.unwrap_err().unwrap(), ContractError::NotAuthorized);
+    }
+
+    // --- Initialization edge cases -----------------------------------------
+
+    #[test]
+    fn double_init_rejected() {
+        let env = Env::default();
+        let (_admin, client) = setup(&env, 1_000_000);
+
+        // A second init (with a different admin) must be cleanly rejected,
+        // not silently overwrite the existing admin.
+        let other_admin = Address::generate(&env);
+        let result = client.try_init(&other_admin, &2_000_000);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::AlreadyInitialized
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "not init")]
+    fn set_total_staked_before_init_panics() {
+        // Admin-gated functions read the admin via `.expect("not init")`,
+        // so calling one before init is a bare panic, not a typed error.
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(Governance, ());
+        let client = GovernanceClient::new(&env, &id);
+
+        let caller = Address::generate(&env);
+        client.set_total_staked(&caller, &1);
+    }
+
+    #[test]
+    fn create_proposal_before_init_rejects_insufficient_stake() {
+        // create_proposal does not read the admin, so pre-init it operates on
+        // zeroed state: the proposer's stake defaults to 0, yielding a typed
+        // InsufficientStake rather than a panic. Documents that init is not an
+        // enforced precondition here (see report).
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(Governance, ());
+        let client = GovernanceClient::new(&env, &id);
+
+        let proposer = Address::generate(&env);
+        let result = client.try_create_proposal(&proposer, &Symbol::new(&env, "p"), &1, &2);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::InsufficientStake
+        );
+    }
+
+    #[test]
+    fn vote_before_init_rejects_proposal_not_found() {
+        // vote reads a proposal that cannot exist pre-init → ProposalNotFound.
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(Governance, ());
+        let client = GovernanceClient::new(&env, &id);
+
+        let voter = Address::generate(&env);
+        let result = client.try_vote(&voter, &1, &true);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotFound
+        );
+    }
+
+    // --- Timelock boundary on execute --------------------------------------
+
+    fn passed_proposal(env: &Env) -> (GovernanceClient<'_>, u64) {
+        // Helper: create + pass a proposal (voting ended, finalized Passed).
+        let (admin, client) = setup(env, 1_000_000);
+        let proposer = Address::generate(env);
+        give_stake(env, &client, &admin, &proposer, 200_000);
+        let voter = Address::generate(env);
+        give_stake(env, &client, &admin, &voter, 800_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(env, "param"), &1, &2);
+        client.vote(&voter, &pid, &true);
+
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + 1);
+        let status = client.finalize_proposal(&pid);
+        assert!(matches!(status, ProposalStatus::Passed));
+        (client, pid)
+    }
+
+    #[test]
+    fn execute_one_second_before_timelock_rejected() {
+        // execute_after = voting_ends_at + TIMELOCK_SECS. One second earlier
+        // must still reject with TimelockNotElapsed (off-by-one guard).
+        let env = Env::default();
+        let (client, pid) = passed_proposal(&env);
+
+        let execute_after = VOTING_PERIOD_SECS + TIMELOCK_SECS;
+        env.ledger().with_mut(|li| li.timestamp = execute_after - 1);
+        let result = client.try_execute_proposal(&pid);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::TimelockNotElapsed
+        );
+    }
+
+    #[test]
+    fn execute_exactly_at_timelock_boundary_succeeds() {
+        // Exactly at execute_after the check `now < execute_after` is false,
+        // so execution is permitted. Confirms the boundary is inclusive.
+        let env = Env::default();
+        let (client, pid) = passed_proposal(&env);
+
+        let execute_after = VOTING_PERIOD_SECS + TIMELOCK_SECS;
+        env.ledger().with_mut(|li| li.timestamp = execute_after);
+        client.execute_proposal(&pid);
+
+        let proposal = client.get_proposal(&pid).unwrap();
+        assert!(matches!(proposal.status, ProposalStatus::Executed));
+    }
+
+    // --- vote() failure paths ----------------------------------------------
+
+    #[test]
+    fn vote_on_nonexistent_proposal_rejected() {
+        let env = Env::default();
+        let (_admin, client) = setup(&env, 1_000_000);
+        let voter = Address::generate(&env);
+
+        let result = client.try_vote(&voter, &999, &true);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotFound
+        );
+    }
+
+    #[test]
+    fn vote_after_voting_period_rejected() {
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 200_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+
+        // Advance strictly past voting_ends_at (now > voting_ends_at).
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + 1);
+        let result = client.try_vote(&proposer, &pid, &true);
+        assert_eq!(result.unwrap_err().unwrap(), ContractError::VotingNotEnded);
+    }
+
+    #[test]
+    fn vote_on_cancelled_proposal_rejected() {
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 200_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.cancel_proposal(&proposer, &pid);
+
+        // Status is Cancelled (not Active) → ProposalNotActive.
+        let result = client.try_vote(&proposer, &pid, &true);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotActive
+        );
+    }
+
+    // --- finalize_proposal() failure paths ---------------------------------
+
+    #[test]
+    fn finalize_before_voting_ends_rejected() {
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 200_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        // now (0) <= voting_ends_at → VotingNotEnded.
+        let result = client.try_finalize_proposal(&pid);
+        assert_eq!(result.unwrap_err().unwrap(), ContractError::VotingNotEnded);
+    }
+
+    #[test]
+    fn finalize_nonexistent_proposal_rejected() {
+        let env = Env::default();
+        let (_admin, client) = setup(&env, 1_000_000);
+        let result = client.try_finalize_proposal(&123);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotFound
+        );
+    }
+
+    #[test]
+    fn double_finalize_rejected() {
+        // After the first finalize the status is no longer Active, so a second
+        // finalize must reject with ProposalNotActive.
+        let env = Env::default();
+        let (client, pid) = passed_proposal(&env);
+
+        let result = client.try_finalize_proposal(&pid);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotActive
+        );
+    }
+
+    // --- execute_proposal() "cannot execute without passing" ---------------
+
+    #[test]
+    fn execute_unfinalized_proposal_rejected() {
+        // An Active (never finalized) proposal cannot be executed even after
+        // the timelock window — guards the "executable-without-passing" risk.
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 200_000);
+        let voter = Address::generate(&env);
+        give_stake(&env, &client, &admin, &voter, 800_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.vote(&voter, &pid, &true);
+
+        // Far past any timelock, but status is still Active (not finalized).
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + TIMELOCK_SECS + 100);
+        let result = client.try_execute_proposal(&pid);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotPassed
+        );
+    }
+
+    #[test]
+    fn execute_rejected_proposal_rejected() {
+        // A finalized-Rejected proposal cannot be executed.
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 50_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        // Only proposer votes: 50_000 < 100_000 quorum → Rejected.
+        client.vote(&proposer, &pid, &true);
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + 1);
+        let status = client.finalize_proposal(&pid);
+        assert!(matches!(status, ProposalStatus::Rejected));
+
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + TIMELOCK_SECS + 1);
+        let result = client.try_execute_proposal(&pid);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotPassed
+        );
+    }
+
+    #[test]
+    fn execute_nonexistent_proposal_rejected() {
+        let env = Env::default();
+        let (_admin, client) = setup(&env, 1_000_000);
+        let result = client.try_execute_proposal(&7);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotFound
+        );
+    }
+
+    // --- cancel_proposal() failure paths -----------------------------------
+
+    #[test]
+    fn cancel_nonexistent_proposal_rejected() {
+        let env = Env::default();
+        let (_admin, client) = setup(&env, 1_000_000);
+        let caller = Address::generate(&env);
+        let result = client.try_cancel_proposal(&caller, &5);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotFound
+        );
+    }
+
+    #[test]
+    fn cancel_already_finalized_proposal_rejected() {
+        // A Passed proposal is no longer Active → cancel rejects with
+        // ProposalNotActive (checked before the proposer-identity check).
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 200_000);
+        let voter = Address::generate(&env);
+        give_stake(&env, &client, &admin, &voter, 800_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.vote(&voter, &pid, &true);
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + 1);
+        client.finalize_proposal(&pid);
+
+        let result = client.try_cancel_proposal(&proposer, &pid);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::ProposalNotActive
+        );
+    }
+
+    // --- Quorum / majority boundary cases ----------------------------------
+
+    #[test]
+    fn quorum_exactly_at_threshold_passes() {
+        // total_staked = 1_000_000 → quorum = 10% = 100_000. Exactly 100_000
+        // total votes satisfies `!(total_votes < quorum)` and with all `for`
+        // it must pass. Confirms the threshold is inclusive.
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 100_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.vote(&proposer, &pid, &true); // exactly 100_000 for
+
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + 1);
+        let status = client.finalize_proposal(&pid);
+        assert!(matches!(status, ProposalStatus::Passed));
+
+        let proposal = client.get_proposal(&pid).unwrap();
+        assert_eq!(proposal.votes_for, 100_000);
+    }
+
+    #[test]
+    fn quorum_one_below_threshold_rejected() {
+        // 99_999 total votes is one below the 100_000 quorum → Rejected.
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 99_999);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.vote(&proposer, &pid, &true);
+
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + 1);
+        let status = client.finalize_proposal(&pid);
+        assert!(matches!(status, ProposalStatus::Rejected));
+    }
+
+    #[test]
+    fn tie_vote_is_rejected() {
+        // Passing requires strict majority (`votes_for > votes_against`); an
+        // exact tie (with quorum met) falls through to Rejected. Boundary of
+        // the majority rule.
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 300_000);
+        let opponent = Address::generate(&env);
+        give_stake(&env, &client, &admin, &opponent, 300_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.vote(&proposer, &pid, &true); // 300_000 for
+        client.vote(&opponent, &pid, &false); // 300_000 against → tie
+
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + 1);
+        let status = client.finalize_proposal(&pid);
+        assert!(matches!(status, ProposalStatus::Rejected));
+
+        let proposal = client.get_proposal(&pid).unwrap();
+        assert_eq!(proposal.votes_for, proposal.votes_against);
+    }
+
+    #[test]
+    fn zero_total_staked_makes_quorum_trivially_met() {
+        // Boundary: with snapshotted total_staked = 0 the quorum requirement is
+        // 0, so a single `for` vote both meets quorum and wins the majority.
+        // Documents that a mis-set (zero) total staked removes quorum
+        // protection entirely (see report for the governance-capture note).
+        let env = Env::default();
+        let (admin, client) = setup(&env, 0);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 5);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.vote(&proposer, &pid, &true);
+
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + 1);
+        let status = client.finalize_proposal(&pid);
+        assert!(matches!(status, ProposalStatus::Passed));
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow")]
+    fn vote_counting_overflow_panics() {
+        // Vote weights are summed as unchecked i128 additions. Two voters whose
+        // combined weight exceeds i128::MAX overflow-panic under the dev
+        // profile's debug assertions. Documents an overflow-prone arithmetic
+        // path (requires admin to set adversarial stake weights).
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, i128::MAX);
+        let voter = Address::generate(&env);
+        give_stake(&env, &client, &admin, &voter, 1);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.vote(&proposer, &pid, &true); // votes_for = i128::MAX
+        client.vote(&voter, &pid, &true); // i128::MAX + 1 → overflow panic
+    }
+
+    // --- Event assertions ---------------------------------------------------
+    // Pattern borrowed from staking_pool/rent_payments (no prior governance
+    // event tests): read `env.events().all()`, decode topics and the data tuple
+    // via `try_into_val`.
+
+    #[test]
+    fn create_proposal_emits_event() {
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 100_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+
+        let events = env.events().all();
+        let (_, topics, data) = events.last().unwrap();
+        let ns: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+        let name: Symbol = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(ns, Symbol::new(&env, "governance"));
+        assert_eq!(name, Symbol::new(&env, "proposal_created"));
+
+        // data = (id, proposer, snapshotted_total_staked)
+        let (id, ev_proposer, total): (u64, Address, i128) = data.try_into_val(&env).unwrap();
+        assert_eq!(id, pid);
+        assert_eq!(ev_proposer, proposer);
+        assert_eq!(total, 1_000_000);
+    }
+
+    #[test]
+    fn vote_emits_event() {
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 100_000);
+        let voter = Address::generate(&env);
+        give_stake(&env, &client, &admin, &voter, 250_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.vote(&voter, &pid, &true);
+
+        let events = env.events().all();
+        let (_, topics, data) = events.last().unwrap();
+        let name: Symbol = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(name, Symbol::new(&env, "voted"));
+
+        // data = (proposal_id, voter, support, weight)
+        let (ev_pid, ev_voter, support, weight): (u64, Address, bool, i128) =
+            data.try_into_val(&env).unwrap();
+        assert_eq!(ev_pid, pid);
+        assert_eq!(ev_voter, voter);
+        assert!(support);
+        assert_eq!(weight, 250_000);
+    }
+
+    #[test]
+    fn finalize_proposal_emits_event() {
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 200_000);
+        let voter = Address::generate(&env);
+        give_stake(&env, &client, &admin, &voter, 800_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.vote(&proposer, &pid, &true);
+        client.vote(&voter, &pid, &false);
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + 1);
+        client.finalize_proposal(&pid);
+
+        let events = env.events().all();
+        let (_, topics, data) = events.last().unwrap();
+        let name: Symbol = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(name, Symbol::new(&env, "proposal_finalized"));
+
+        // data = (proposal_id, votes_for, votes_against, quorum_reached)
+        let (ev_pid, votes_for, votes_against, quorum_reached): (u64, i128, i128, bool) =
+            data.try_into_val(&env).unwrap();
+        assert_eq!(ev_pid, pid);
+        assert_eq!(votes_for, 200_000);
+        assert_eq!(votes_against, 800_000);
+        assert!(quorum_reached); // 1_000_000 total votes >= 100_000 quorum
+    }
+
+    #[test]
+    fn execute_proposal_emits_event() {
+        let env = Env::default();
+        let (client, pid) = passed_proposal(&env);
+
+        env.ledger()
+            .with_mut(|li| li.timestamp = VOTING_PERIOD_SECS + TIMELOCK_SECS + 1);
+        client.execute_proposal(&pid);
+
+        let events = env.events().all();
+        let (_, topics, data) = events.last().unwrap();
+        let name: Symbol = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(name, Symbol::new(&env, "proposal_executed"));
+
+        // data = (proposal_id, param_key, proposed_value)
+        let (ev_pid, param_key, proposed_value): (u64, Symbol, i128) =
+            data.try_into_val(&env).unwrap();
+        assert_eq!(ev_pid, pid);
+        assert_eq!(param_key, Symbol::new(&env, "param"));
+        assert_eq!(proposed_value, 2);
+    }
+
+    #[test]
+    fn cancel_proposal_emits_event() {
+        let env = Env::default();
+        let (admin, client) = setup(&env, 1_000_000);
+        let proposer = Address::generate(&env);
+        give_stake(&env, &client, &admin, &proposer, 200_000);
+
+        let pid = client.create_proposal(&proposer, &Symbol::new(&env, "param"), &1, &2);
+        client.cancel_proposal(&proposer, &pid);
+
+        let events = env.events().all();
+        let (_, topics, data) = events.last().unwrap();
+        let name: Symbol = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(name, Symbol::new(&env, "proposal_cancelled"));
+
+        // data = proposal_id (published as a bare u64, not a tuple)
+        let ev_pid: u64 = data.try_into_val(&env).unwrap();
+        assert_eq!(ev_pid, pid);
     }
 }

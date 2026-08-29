@@ -29,6 +29,7 @@ import { createAdminUpgradeableProxyRouter } from "./routes/adminUpgradeableProx
 import { createDealsRouter } from "./routes/deals.js"
 import { createWhistleblowerRouter } from "./routes/whistleblower.js"
 import { createStakingRouter } from "./routes/staking.js"
+import { createStakingDelegationRouter } from "./routes/stakingDelegation.js"
 import { createWebhooksRouter } from "./routes/webhooks.js"
 import { createDepositsRouter } from "./routes/deposits.js"
 import { EarningsServiceImpl } from "./services/earnings.js"
@@ -65,6 +66,8 @@ import { initOutboxStore, PostgresOutboxStore } from "./outbox/store.js"
 import { OutboxSender } from "./outbox/sender.js"
 import { OutboxWorker } from "./outbox/worker.js"
 import { DealStatusSyncWorker } from "./workers/dealStatusSyncWorker.js"
+import { RentReleaseDisputeWorker } from "./workers/rentReleaseDisputeWorker.js"
+import { RentToOwnSyncWorker } from "./workers/rentToOwnSyncWorker.js"
 import { initializeAppSecretRotation, secretRotationMiddleware, createSecretRotationRouter } from "./middleware/secretRotation.js"
 import { getSecretRotationService } from "./services/secretRotationService.js"
 import migrationGuideRouter from "./routes/migrationGuide.js"
@@ -78,6 +81,7 @@ import { setDbPoolMetricsCallback, setSorobanCircuitBreakerCallback, shutdownMet
 import { metricsMiddleware } from './middleware/metricsMiddleware.js';
 import { JobScheduler, initJobStore, PostgresJobStore } from "./jobs/scheduler/index.js"
 import { createAdminJobsRouter } from "./routes/adminJobs.js"
+import { createAdminQuotaRouter } from "./routes/adminQuota.js"
 import { getNotificationService } from "./notifications/index.js"
 import { createWebhookReplayRouter } from "./routes/webhookReplay.js"
 import { PostgresWebhookReplayStore, initWebhookReplayStore as initStore } from "./webhookReplay/index.js"
@@ -102,6 +106,7 @@ import { createAdminUnderwritingRouter } from "./routes/adminUnderwriting.js"
 import { PostgresRewardsDataLayer } from "./services/postgres-rewards-data-layer.js"
 import { createReceiptRepository, createTimelockRepository } from "./indexer/repositoryBootstrap.js"
 import { createLandlordPropertiesRouter } from "./routes/landlordProperties.js";
+import { createEpochRewardsRouter } from "./routes/epochRewards.js";
 import { createLandlordRouter } from "./routes/landlord.js";
 import { createAdminLandlordVerificationRouter, createLandlordVerificationRouter } from "./routes/landlordVerification.js";
 import { authenticateToken } from "./middleware/auth.js";
@@ -112,6 +117,7 @@ import { createTenantSavedPropertiesRouter } from "./routes/tenantSavedPropertie
 import { createTenantPaymentsRouter } from "./routes/tenantPayments.js";
 import { createNotificationsRouter } from "./routes/notifications.js";
 import { createSettlementAdminRouter } from "./routes/settlementAdmin.js";
+import { createDisputeAdminRouter } from "./routes/disputeAdmin.js";
 import { SettlementOutboxWorker } from "./settlement/worker.js";
 import { createLedgerReconciliationRouter } from "./routes/ledgerReconciliation.js";
 import { createAdminTransactionLedgerRouter } from "./routes/adminTransactionLedger.js";
@@ -160,6 +166,7 @@ import { createAdminRolesRouter } from "./routes/adminRoles.js";
 import { createAbuseRouter } from "./routes/abuse.js";
 import { createInspectorJobsRouter, createAdminInspectorJobsRouter } from "./routes/inspectorJobs.js";
 import { createPropertyInspectionsRouter } from "./routes/propertyInspections.js";
+import { createGovernanceRouter } from "./routes/governance.js";
 import { createRentGuaranteeRouter } from "./routes/rentGuarantee.js";
 import { createTenantRatingCardRouter } from "./routes/tenantRatingCard.js";
 import { createRentGuaranteeProviderFromEnv } from "./services/insurance/rentGuaranteeProviderFactory.js";
@@ -331,7 +338,10 @@ export function createApp() {
   const rewardsDataLayer = process.env.DATABASE_URL
     ? new PostgresRewardsDataLayer()
     : new StubRewardsDataLayer();
-  const conversionProvider = createConversionProviderFromEnv(env);
+  const conversionProvider = createConversionProviderFromEnv(env, {
+    sorobanAdapter,
+    oracleContractId: sorobanConfig.oraclePriceFeedsId,
+  });
   const conversionRateService = new ConversionRateService(conversionProvider);
   const conversionService = new ConversionService(conversionProvider, "onramp");
   app.set("conversionService", conversionService);
@@ -403,6 +413,25 @@ export function createApp() {
     );
     dealStatusSyncWorker.start(dealSyncIntervalMs);
     workers.push(dealStatusSyncWorker);
+
+    // deal_escrow's default challenge/dispute windows are 24h/48h — a 15
+    // minute poll is far more than granular enough to catch expirations
+    // promptly without hammering the RPC endpoint.
+    const rentReleaseDisputeWorker = new RentReleaseDisputeWorker(sorobanAdapter);
+    const rentReleaseDisputeIntervalMs = parseInt(
+      process.env.RENT_RELEASE_DISPUTE_WORKER_INTERVAL_MS ?? "900000",
+      10,
+    );
+    rentReleaseDisputeWorker.start(rentReleaseDisputeIntervalMs);
+    workers.push(rentReleaseDisputeWorker);
+
+    const rentToOwnSyncWorker = new RentToOwnSyncWorker(sorobanAdapter);
+    const rentToOwnSyncIntervalMs = parseInt(
+      process.env.RENT_TO_OWN_SYNC_WORKER_INTERVAL_MS ?? "30000",
+      10,
+    );
+    rentToOwnSyncWorker.start(rentToOwnSyncIntervalMs);
+    workers.push(rentToOwnSyncWorker);
   }
 
   // Job Scheduler — swap to Postgres store when DATABASE_URL is set
@@ -683,6 +712,7 @@ export function createApp() {
   app.use('/api/v1/admin/reconciliation', createAdminReconciliationRouter(ngnWalletService))
   app.use('/api/v1/admin/secrets', createSecretRotationRouter())
   app.use('/api/v1/admin/jobs', createAdminJobsRouter())
+  app.use('/api/v1/admin/quota', createAdminQuotaRouter())
   app.use('/api/v1/admin/webhook-replay', createWebhookReplayRouter())
   app.use('/api/v1/deals', createDealsRouter())
   app.use('/api/v1/whistleblower', createWhistleblowerRouter(earningsService))
@@ -721,6 +751,7 @@ export function createApp() {
     app.use('/api/admin/reconciliation', createAdminReconciliationRouter(ngnWalletService))
     app.use('/api/admin/secrets', createSecretRotationRouter())
     app.use('/api/admin/jobs', createAdminJobsRouter())
+    app.use('/api/admin/quota', createAdminQuotaRouter())
     app.use('/api/admin/webhook-replay', createWebhookReplayRouter())
     app.use('/api', createContractEventsRouter())
     app.use('/api/deals', createDealsRouter())
@@ -764,6 +795,7 @@ export function createApp() {
     app.use("/api/admin/sessions", createAdminSessionsRouter());
     app.use("/api/admin/secrets", createSecretRotationRouter());
     app.use("/api/admin/jobs", createAdminJobsRouter());
+    app.use("/api/admin/quota", createAdminQuotaRouter());
     app.use("/api/admin/fraud", createAdminFraudRouter());
     app.use("/api/admin/outbox", createAdminOutboxRouter(sorobanAdapter));
     app.use("/api/admin", createAdminAuditRouter());
@@ -780,6 +812,13 @@ export function createApp() {
     app.use("/api/admin", createSettlementAdminRouter());
     app.use("/api", createContractEventsRouter());
     app.use("/api/config/feature-flags", createFeatureFlagsRouter());
+    // Mounted ahead of "/api/staking" so the delegation prefix wins; the
+    // stake_delegation contract is a separate ledger from staking_pool.
+    app.use(
+      "/api/staking/delegation",
+      requireFlag("STAKING_ENABLED"),
+      createStakingDelegationRouter(sorobanAdapter, walletService, linkedAddressStore),
+    );
     app.use(
       "/api/staking",
       requireFlag("STAKING_ENABLED"),
@@ -799,6 +838,7 @@ export function createApp() {
     app.use("/api/gas-metrics", createGasMetricsRouter());
     app.use("/api", createPropertyPhotosRouter());
     app.use("/api/landlord/properties", createLandlordPropertiesRouter());
+    app.use("/api/epoch-rewards", createEpochRewardsRouter());
     app.use(
       "/api/landlord/partner-applications",
       createPartnerLandlordApplicationsRouter(),
@@ -852,6 +892,7 @@ export function createApp() {
   app.use("/api/v1/admin/sessions", createAdminSessionsRouter());
   app.use("/api/v1/admin/secrets", createSecretRotationRouter());
   app.use("/api/v1/admin/jobs", createAdminJobsRouter());
+  app.use("/api/v1/admin/quota", createAdminQuotaRouter());
   app.use("/api/v1/admin/fraud", createAdminFraudRouter());
   app.use("/api/v1/admin/outbox", createAdminOutboxRouter(sorobanAdapter));
   app.use("/api/v1/admin", createAdminAuditRouter());
@@ -867,9 +908,15 @@ export function createApp() {
   app.use("/api/v1/admin", createAdminTenantCreditScoreRouter());
   app.use("/api/v1/admin/credit-score", createAdminCreditScoreRouter());
   app.use("/api/v1/admin", createSettlementAdminRouter());
+  app.use("/api/v1/admin/disputes", createDisputeAdminRouter());
   app.use("/api/v1/config/feature-flags", createFeatureFlagsRouter());
 
 
+  app.use(
+    "/api/v1/staking/delegation",
+    requireFlag("STAKING_ENABLED"),
+    createStakingDelegationRouter(sorobanAdapter, walletService, linkedAddressStore),
+  );
   app.use(
     "/api/v1/staking",
     requireFlag("STAKING_ENABLED"),
@@ -910,6 +957,7 @@ export function createApp() {
   app.use("/api/notifications", createNotificationsRouter());
   app.use("/api/admin", createSettlementAdminRouter());
   app.use("/api/admin", createAdminRolesRouter());
+  app.use("/api/admin/disputes", createDisputeAdminRouter());
   app.use("/api/apartment-reviews", createApartmentReviewsRouter());
   app.use("/api/compliance/reports", createComplianceReportRouter());
   app.use("/api/kyc", createKycRouter());
@@ -942,6 +990,10 @@ export function createApp() {
 
   // Tenant rating card routes
   app.use('/api/v1', createTenantRatingCardRouter(sorobanAdapter))
+
+  // Stake-weighted governance proposal/voting routes — gated by GOVERNANCE_ENABLED flag.
+  // Distinct from the timelock admin queue (admin-timelock.js); see contracts/governance.
+  app.use('/api/v1/governance', authenticateToken, requireFlag('GOVERNANCE_ENABLED'), createGovernanceRouter(sorobanAdapter, linkedAddressStore))
 
   // Interactive API documentation
   app.use("/api/v1/messaging", createMessagingRouter());

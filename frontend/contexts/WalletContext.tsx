@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import {
   isFreighterInstalled,
+  isWalletAllowed,
   connectWallet,
   disconnectWallet,
   signTransaction,
@@ -16,6 +17,7 @@ const POLL_INTERVAL_MS = 3000
 
 interface WalletContextType {
   publicKey: string | null
+  address: string | null
   connected: boolean
   connecting: boolean
   freighterInstalled: boolean
@@ -36,7 +38,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [walletLocked, setWalletLocked] = useState(false)
 
   useEffect(() => {
-    isFreighterInstalled().then(setFreighterInstalled)
+    // A wallet that is installed and already permitted, but cannot produce an
+    // address, is locked — a different problem from "not installed" and from
+    // "never connected", and it needs its own instruction.
+    void (async () => {
+      const installed = await isFreighterInstalled()
+      setFreighterInstalled(installed)
+      if (!installed) return
+      if (await isWalletAllowed()) {
+        setWalletLocked((await getActiveAddress()) === null)
+      }
+    })()
+
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       try {
@@ -118,6 +131,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     <WalletContext.Provider
       value={{
         publicKey,
+        address: publicKey,
         connected: publicKey !== null,
         connecting,
         freighterInstalled: freighterInstalled === true,

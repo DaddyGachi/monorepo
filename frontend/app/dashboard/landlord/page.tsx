@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Plus,
@@ -15,12 +15,17 @@ import {
   Edit,
   Trash2,
   Eye,
-  AlertTriangle,
-  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MoneyValue,
+  StatCardSkeleton,
+} from "@/components/ui/data-state";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,7 +59,7 @@ export default function LandlordDashboard() {
   const [propertiesLoading, setPropertiesLoading] = useState(true);
   const [propertiesError, setPropertiesError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadStats = useCallback(() => {
     getLandlordDashboardStats()
       .then((data) => {
         setStats(data);
@@ -69,7 +74,7 @@ export default function LandlordDashboard() {
       .finally(() => setStatsLoading(false));
   }, []);
 
-  useEffect(() => {
+  const loadProperties = useCallback(() => {
     listLandlordProperties()
       .then(async (res) => {
         setProperties(res.properties);
@@ -103,6 +108,28 @@ export default function LandlordDashboard() {
       .finally(() => setPropertiesLoading(false));
   }, []);
 
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  useEffect(() => {
+    loadProperties();
+  }, [loadProperties]);
+
+  // Retry handlers reset to the loading state before re-fetching. Kept separate
+  // from the loaders above so the mount effects never call setState synchronously.
+  const retryStats = useCallback(() => {
+    setStatsLoading(true);
+    setStatsError(null);
+    loadStats();
+  }, [loadStats]);
+
+  const retryProperties = useCallback(() => {
+    setPropertiesLoading(true);
+    setPropertiesError(null);
+    loadProperties();
+  }, [loadProperties]);
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-NG", {
       style: "currency",
@@ -111,30 +138,34 @@ export default function LandlordDashboard() {
     }).format(amount);
   };
 
+  // `money` entries go through MoneyValue so an absent figure renders as a dash
+  // rather than as ₦0, which a landlord could reasonably read as "earned zero".
   const statsData = [
     {
       label: "Total Properties",
-      value: stats?.totalProperties.toString() || "0",
+      value: stats?.totalProperties ?? null,
+      money: false,
       icon: Building2,
       color: "bg-primary",
     },
     {
       label: "Active Listings",
-      value: stats?.activeListings.toString() || "0",
+      value: stats?.activeListings ?? null,
+      money: false,
       icon: Building2,
       color: "bg-secondary",
     },
     {
       label: "Total Views",
-      value: stats?.totalViews.toString() || "0",
+      value: stats?.totalViews ?? null,
+      money: false,
       icon: Eye,
       color: "bg-accent",
     },
     {
       label: "Monthly Revenue",
-      value: stats?.monthlyRevenueNgn
-        ? formatCurrency(stats.monthlyRevenueNgn)
-        : "₦0",
+      value: stats?.monthlyRevenueNgn ?? null,
+      money: true,
       icon: Building2,
       color: "bg-primary",
     },
@@ -168,33 +199,25 @@ export default function LandlordDashboard() {
             </Link>
           </div>
 
-          <div className="mb-6 grid grid-cols-2 gap-3 md:mb-8 md:grid-cols-4 md:gap-6">
-            {statsLoading ? (
-              Array.from({ length: 4 }).map((_, index) => (
-                <Card
-                  key={`stats-loading-${index}`}
-                  className="border-3 border-foreground p-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] md:p-6"
-                >
-                  <div className="space-y-2">
-                    <Skeleton className="h-5 w-20" />
-                    <Skeleton className="h-8 w-16" />
-                  </div>
-                </Card>
-              ))
-            ) : statsError ? (
-              <Card className="col-span-2 border-3 border-foreground bg-destructive/10 p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] md:col-span-4 md:p-6">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
-                  <div>
-                    <p className="font-bold">Stats are currently unavailable</p>
-                    <p className="text-sm text-muted-foreground">
-                      {statsError}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            ) : (
-              statsData.map((stat) => (
+          {statsLoading ? (
+            <LoadingState
+              label="Loading portfolio stats"
+              className="mb-6 grid grid-cols-2 gap-3 md:mb-8 md:grid-cols-4 md:gap-6"
+            >
+              {Array.from({ length: 4 }).map((_, index) => (
+                <StatCardSkeleton key={`stats-loading-${index}`} />
+              ))}
+            </LoadingState>
+          ) : statsError ? (
+            <ErrorState
+              className="mb-6 md:mb-8"
+              title="Stats are currently unavailable"
+              description={statsError}
+              onRetry={retryStats}
+            />
+          ) : (
+            <div className="mb-6 grid grid-cols-2 gap-3 md:mb-8 md:grid-cols-4 md:gap-6">
+              {statsData.map((stat) => (
                 <Card
                   key={stat.label}
                   className="border-3 border-foreground p-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] md:p-6"
@@ -210,17 +233,31 @@ export default function LandlordDashboard() {
                         {stat.label}
                       </p>
                       <p className="truncate text-xl font-bold text-foreground md:text-3xl">
-                        {stat.value}
+                        {stat.money ? (
+                          <MoneyValue
+                            status="ready"
+                            amount={stat.value}
+                            format={formatCurrency}
+                          />
+                        ) : (
+                          (stat.value?.toLocaleString() ?? "—")
+                        )}
                       </p>
                     </div>
                   </div>
                 </Card>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
 
-          <div className="mb-6 flex flex-wrap gap-2 md:gap-4">
+          <div
+            className="mb-6 flex flex-wrap gap-2 md:gap-4"
+            role="tablist"
+            aria-label="Dashboard sections"
+          >
             <button
+              role="tab"
+              aria-selected={activeTab === "properties"}
               onClick={() => setActiveTab("properties")}
               className={`border-3 border-foreground px-3 py-2 text-sm font-bold transition-all md:px-6 md:py-3 md:text-base ${
                 activeTab === "properties"
@@ -235,35 +272,34 @@ export default function LandlordDashboard() {
           {activeTab === "properties" && (
             <div className="grid gap-6">
               {propertiesLoading ? (
-                Array.from({ length: 2 }).map((_, index) => (
-                  <Card
-                    key={`properties-loading-${index}`}
-                    className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]"
-                  >
-                    <Skeleton className="mb-4 h-6 w-56" />
-                    <Skeleton className="mb-2 h-4 w-40" />
-                    <Skeleton className="h-32 w-full" />
-                  </Card>
-                ))
+                <LoadingState label="Loading your properties" className="grid gap-6">
+                  {Array.from({ length: 2 }).map((_, index) => (
+                    <Card
+                      key={`properties-loading-${index}`}
+                      className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]"
+                    >
+                      <Skeleton className="mb-4 h-6 w-56" />
+                      <Skeleton className="mb-2 h-4 w-40" />
+                      <Skeleton className="h-32 w-full" />
+                    </Card>
+                  ))}
+                </LoadingState>
               ) : propertiesError ? (
-                <Card className="border-3 border-foreground bg-destructive/10 p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
-                    <div>
-                      <p className="font-bold">Property data is unavailable</p>
-                      <p className="text-sm text-muted-foreground">
-                        {propertiesError}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
+                <ErrorState
+                  title="Property data is unavailable"
+                  description={propertiesError}
+                  onRetry={retryProperties}
+                />
               ) : properties.length === 0 ? (
-                <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                  <p className="font-bold">No properties yet</p>
-                  <p className="text-sm text-muted-foreground">
-                    Add your first property to get started
-                  </p>
-                </Card>
+                <EmptyState
+                  icon={Building2}
+                  title="No properties yet"
+                  description="List your first property to start receiving applications from verified tenants."
+                  action={{
+                    label: "Add your first property",
+                    href: "/dashboard/landlord/properties/new",
+                  }}
+                />
               ) : (
                 properties.map((property) => {
                   let statusBadgeClassName = "bg-muted";
@@ -309,9 +345,10 @@ export default function LandlordDashboard() {
                           {pendingCount > 0 && property.listingId && (
                             <Link
                               href={`/dashboard/landlord/properties/${property.listingId}/applications`}
+                              aria-label={`${pendingCount} pending application${pendingCount !== 1 ? "s" : ""} for ${property.title}`}
                               className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center border-2 border-foreground bg-destructive text-xs font-bold text-destructive-foreground shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[1px_1px_0px_0px_rgba(26,26,26,1)]"
                             >
-                              {pendingCount}
+                              <span aria-hidden="true">{pendingCount}</span>
                             </Link>
                           )}
                         </div>
@@ -333,8 +370,9 @@ export default function LandlordDashboard() {
                                   variant="outline"
                                   size="icon"
                                   className="border-3 border-foreground bg-transparent"
+                                  aria-label={`Options for ${property.title}`}
                                 >
-                                  <MoreVertical className="h-4 w-4" />
+                                  <MoreVertical className="h-4 w-4" aria-hidden="true" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent className="border-3 border-foreground">
@@ -365,17 +403,17 @@ export default function LandlordDashboard() {
 
                           <div className="mb-4 flex gap-6">
                             <span className="flex items-center gap-1 text-sm font-medium">
-                              <Bed className="h-4 w-4" /> {property.bedrooms}{" "}
-                              Beds
+                              <Bed className="h-4 w-4" aria-hidden="true" />
+                              {property.bedrooms} Beds
                             </span>
                             <span className="flex items-center gap-1 text-sm font-medium">
-                              <Bath className="h-4 w-4" /> {property.bathrooms}{" "}
-                              Baths
+                              <Bath className="h-4 w-4" aria-hidden="true" />
+                              {property.bathrooms} Baths
                             </span>
                             {property.sqm && (
                               <span className="flex items-center gap-1 text-sm font-medium">
-                                <Square className="h-4 w-4" /> {property.sqm}{" "}
-                                sqm
+                                <Square className="h-4 w-4" aria-hidden="true" />
+                                {property.sqm} sqm
                               </span>
                             )}
                           </div>
@@ -383,7 +421,11 @@ export default function LandlordDashboard() {
                           <div className="mt-auto flex items-center justify-between">
                             <div className="flex items-center gap-6">
                               <p className="text-2xl font-bold text-primary">
-                                {formatCurrency(property.annualRentNgn)}
+                                <MoneyValue
+                                  status="ready"
+                                  amount={property.annualRentNgn}
+                                  format={formatCurrency}
+                                />
                                 <span className="text-sm font-normal text-muted-foreground">
                                   /year
                                 </span>

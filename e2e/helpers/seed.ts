@@ -6,6 +6,7 @@ export interface TestUsers {
   landlord: { email: string; password: string; id?: string };
   admin: { email: string; password: string; id?: string };
   whistleblower: { email: string; password: string; id?: string };
+  inspector: { email: string; password: string; id?: string };
 }
 
 export interface SeedResult {
@@ -15,6 +16,10 @@ export interface SeedResult {
   approvedListingId: string;
   /** The landlord_properties id (approved, linked to the listing). */
   landlordPropertyId: string;
+  /** An inspection job ID in inspection_jobs (available). */
+  inspectionJobId: string;
+  /** A property inspection ID in property_inspections (in_progress, assigned to inspector). */
+  propertyInspectionId: string;
   runId: string;
 }
 
@@ -29,6 +34,7 @@ export async function seedTestData(): Promise<SeedResult> {
     landlord: { email: `landlord_${runId}@shelterflex.test`, password: "Test1234!" },
     admin: { email: `admin_${runId}@shelterflex.test`, password: "Test1234!" },
     whistleblower: { email: `wb_${runId}@shelterflex.test`, password: "Test1234!" },
+    inspector: { email: `inspector_${runId}@shelterflex.test`, password: "Test1234!" },
   };
 
   const client = await pool.connect();
@@ -99,6 +105,30 @@ export async function seedTestData(): Promise<SeedResult> {
       ],
     );
 
+    // Inspector profile (VERIFIED so they can accept jobs)
+    await client.query(
+      `INSERT INTO inspector_profiles (user_id, verification_status, bio, service_areas)
+       VALUES ($1, 'VERIFIED', 'E2E test inspector', '["Lagos Mainland"]'::jsonb)`,
+      [(users.inspector as any).id],
+    );
+
+    // Use the same UUID for both tables so the frontend flow works end-to-end
+    const sharedJobId = crypto.randomUUID();
+
+    // Inspection job (inspection_jobs table, for the inspectorApi path)
+    await client.query(
+      `INSERT INTO inspection_jobs (id, listing_id, offered_fee_ngn, status, inspector_id)
+       VALUES ($1, $2, 25000, 'claimed', $3)`,
+      [sharedJobId, listing[0].id, (users.inspector as any).id],
+    );
+
+    // Property inspection (property_inspections table, for the propertyInspectionApi path)
+    await client.query(
+      `INSERT INTO property_inspections (id, listing_id, inspector_id, status)
+       VALUES ($1, $2, $3, 'in_progress')`,
+      [sharedJobId, listing[0].id, (users.inspector as any).id],
+    );
+
     await client.query("COMMIT");
     await client.release();
     await pool.end();
@@ -108,6 +138,8 @@ export async function seedTestData(): Promise<SeedResult> {
       listingId: listing[0].id,
       approvedListingId: wlRow.listing_id,
       landlordPropertyId: lpRow.id,
+      inspectionJobId: sharedJobId,
+      propertyInspectionId: sharedJobId,
       runId,
     };
   } catch (err) {
@@ -123,6 +155,22 @@ export async function cleanupTestData(runId: string): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query(
+      `DELETE FROM inspection_reports WHERE job_id IN (SELECT id FROM inspection_jobs WHERE listing_id IN (SELECT id FROM properties WHERE title LIKE $1))`,
+      [`%${runId}%`],
+    );
+    await client.query(
+      `DELETE FROM inspection_jobs WHERE listing_id IN (SELECT id FROM properties WHERE title LIKE $1)`,
+      [`%${runId}%`],
+    );
+    await client.query(
+      `DELETE FROM property_inspections WHERE listing_id IN (SELECT id FROM properties WHERE title LIKE $1)`,
+      [`%${runId}%`],
+    );
+    await client.query(
+      `DELETE FROM inspector_profiles WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)`,
+      [`%${runId}%`],
+    );
     await client.query(
       `DELETE FROM listing_applications WHERE listing_id IN
          (SELECT listing_id FROM whistleblower_listings WHERE whistleblower_id IN

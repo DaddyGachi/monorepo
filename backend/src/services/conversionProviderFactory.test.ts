@@ -4,9 +4,11 @@ import { createConversionProviderFromEnv } from './conversionProviderFactory.js'
 import {
   FallbackConversionProvider,
   HttpConversionProvider,
+  OracleConversionProvider,
   StubConversionProvider,
 } from './conversionProvider.js'
 import { logger } from '../utils/logger.js'
+import type { SorobanAdapter } from '../soroban/adapter.js'
 
 const VALID_CONTRACT_ID = 'CAQGAQLQFJZ7PLOMCQN2I2NXHLQXF5DDD7T3IZQDTCZP3VYP7DVHLVSA'
 
@@ -76,6 +78,30 @@ describe('createConversionProviderFromEnv', () => {
     )
     const p = createConversionProviderFromEnv(env)
     expect(p).toBeInstanceOf(FallbackConversionProvider)
+  })
+
+  it('selects stub when CONVERSION_PROVIDER=oracle but no adapter/contract id is supplied', () => {
+    const env = envSchema.parse(baseEnv({ CONVERSION_PROVIDER: 'oracle' }))
+    const p = createConversionProviderFromEnv(env)
+    expect(p).toBeInstanceOf(StubConversionProvider)
+    expect(logger.info).toHaveBeenCalled()
+  })
+
+  it('selects stub when CONVERSION_PROVIDER=oracle with an adapter but no contract id', () => {
+    const env = envSchema.parse(baseEnv({ CONVERSION_PROVIDER: 'oracle' }))
+    const p = createConversionProviderFromEnv(env, { sorobanAdapter: {} as SorobanAdapter })
+    expect(p).toBeInstanceOf(StubConversionProvider)
+  })
+
+  it('wraps OracleConversionProvider in a FallbackConversionProvider when adapter + contract id are supplied', () => {
+    const env = envSchema.parse(baseEnv({ CONVERSION_PROVIDER: 'oracle' }))
+    const p = createConversionProviderFromEnv(env, {
+      sorobanAdapter: {} as SorobanAdapter,
+      oracleContractId: VALID_CONTRACT_ID,
+    })
+    expect(p).toBeInstanceOf(FallbackConversionProvider)
+    expect((p as any).primary).toBeInstanceOf(OracleConversionProvider)
+    expect((p as any).fallback).toBeInstanceOf(StubConversionProvider)
   })
 
   it('envSchema rejects http without CONVERSION_RATE_URL', () => {

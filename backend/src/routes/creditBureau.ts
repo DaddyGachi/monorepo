@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from "express";
 import { creditBureauService } from "../services/creditBureauService.js";
-import { auditLog } from "../repositories/AuditRepository.js";
+import { auditLog, extractAuditContext } from "../utils/auditLogger.js";
 import { AppError } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { logger } from "../utils/logger.js";
@@ -52,16 +52,10 @@ router.post(
       const report = await creditBureauService.pullReport(tenantId, bvn, nin);
 
       // Audit log (without logging BVN/NIN in plain text)
-      const adminId = (req as any).user?.id || "unknown";
-      await auditLog({
-        actor: adminId,
-        action: "CREDIT_REPORT_PULLED",
-        resourceType: "tenant",
-        resourceId: tenantId,
-        details: {
-          provider: process.env.CREDIT_BUREAU_PROVIDER || "mock",
-          score: report.score,
-        },
+      auditLog("CREDIT_REPORT_PULLED", extractAuditContext(req, "admin"), {
+        tenantId,
+        provider: process.env.CREDIT_BUREAU_PROVIDER || "mock",
+        score: report.score,
       });
 
       res.json({
@@ -96,13 +90,9 @@ router.get(
       }
 
       // Audit log
-      const adminId = (req as any).user?.id || "unknown";
-      await auditLog({
-        actor: adminId,
-        action: "CREDIT_REPORT_VIEWED",
-        resourceType: "tenant",
-        resourceId: tenantId,
-        details: { score: report.score },
+      auditLog("CREDIT_REPORT_VIEWED", extractAuditContext(req, "admin"), {
+        tenantId,
+        score: report.score,
       });
 
       res.json({

@@ -104,6 +104,7 @@ CONTRACTS=(
   stake_delegation
   oracle_price_feeds
   tenant_reputation
+  rent_to_own
 )
 
 # ── Deployed-state file ─────────────────────────────────────────────────────

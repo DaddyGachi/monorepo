@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   Building2,
@@ -13,12 +13,23 @@ import {
   ArrowRight,
   MapPin,
   ShieldCheck,
-  Loader2,
+  Heart,
+  Receipt,
 } from "lucide-react";
 import { PropertyCard } from "@/components/property-card";
+import { PropertyCardSkeleton } from "@/components/property-card-skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  EmptyState,
+  ErrorState,
+  ListRowSkeleton,
+  LoadingState,
+  MoneyValue,
+  StatCardSkeleton,
+} from "@/components/ui/data-state";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { TenantRewardsSummaryCard } from "@/components/tenant-rewards-summary-card";
@@ -79,7 +90,7 @@ export default function TenantDashboard() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
+  const loadLease = useCallback(() => {
     getTenantCurrentLease()
       .then((res) => {
         setCurrentLease(res.data);
@@ -94,7 +105,7 @@ export default function TenantDashboard() {
       .finally(() => setLeaseLoading(false));
   }, []);
 
-  useEffect(() => {
+  const loadPayments = useCallback(() => {
     Promise.all([getPaymentSchedule(), getPaymentHistory({ limit: 10 })])
       .then(([scheduleRes, historyRes]) => {
         setPaymentSchedule(scheduleRes.data.schedule || []);
@@ -110,7 +121,7 @@ export default function TenantDashboard() {
       .finally(() => setPaymentsLoading(false));
   }, []);
 
-  useEffect(() => {
+  const loadSaved = useCallback(() => {
     fetchSavedListingIds()
       .then((ids) => {
         if (ids.length === 0) {
@@ -132,6 +143,38 @@ export default function TenantDashboard() {
       .finally(() => setSavedLoading(false));
   }, []);
 
+  useEffect(() => {
+    loadLease();
+  }, [loadLease]);
+
+  useEffect(() => {
+    loadPayments();
+  }, [loadPayments]);
+
+  useEffect(() => {
+    loadSaved();
+  }, [loadSaved]);
+
+  // Retry handlers reset to the loading state before re-fetching. Kept separate
+  // from the loaders above so the mount effects never call setState synchronously.
+  const retryLease = useCallback(() => {
+    setLeaseLoading(true);
+    setLeaseError(null);
+    loadLease();
+  }, [loadLease]);
+
+  const retryPayments = useCallback(() => {
+    setPaymentsLoading(true);
+    setPaymentsError(null);
+    loadPayments();
+  }, [loadPayments]);
+
+  const retrySaved = useCallback(() => {
+    setSavedLoading(true);
+    setSavedError(null);
+    loadSaved();
+  }, [loadSaved]);
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-NG", {
       style: "currency",
@@ -147,7 +190,7 @@ export default function TenantDashboard() {
     let detailText = "";
     if ("paidDate" in payment && payment.paidDate) {
       detailText = `Paid on ${new Date(payment.paidDate).toLocaleDateString()}`;
-    } else if ("dueDate" in payment) {
+    } else if ("dueDate" in payment && payment.dueDate) {
       detailText = `Due ${new Date(payment.dueDate).toLocaleDateString()}`;
     }
 
@@ -162,6 +205,15 @@ export default function TenantDashboard() {
     ? Math.round((onboardingStatus.completedSteps.length / 5) * 100)
     : 0;
   const showOnboardingBanner = onboardingStatus && !onboardingStatus.submitted;
+
+  // Left null rather than 0 when either side is missing, so MoneyValue renders
+  // an explicit dash instead of a balance the server never sent.
+  const remainingBalance =
+    currentLease &&
+    Number.isFinite(currentLease.totalOwed) &&
+    Number.isFinite(currentLease.totalPaid)
+      ? currentLease.totalOwed - currentLease.totalPaid
+      : null;
 
   const allPayments: PaymentItem[] = [
     ...pastPayments.map((p) => ({
@@ -182,7 +234,7 @@ export default function TenantDashboard() {
         <div className="border-b-3 border-foreground bg-amber-50">
           <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3">
-              <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+              <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" aria-hidden="true" />
               <div>
                 <p className="text-sm font-semibold text-amber-900">
                   Complete your profile to apply for properties
@@ -237,16 +289,26 @@ export default function TenantDashboard() {
               Welcome back, Ngozi!
             </h1>
             {leaseLoading ? (
-              <div className="mt-2 flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm text-muted-foreground">
-                  Loading lease info...
-                </span>
-              </div>
+              <LoadingState
+                label="Loading your lease summary"
+                className="mt-2 flex h-6 items-center md:h-7 lg:h-8"
+              >
+                <Skeleton className="h-4 w-72 max-w-full" />
+              </LoadingState>
+            ) : leaseError ? (
+              <p className="mt-2 text-sm text-muted-foreground md:text-base lg:text-lg">
+                We couldn&apos;t load your lease just now.
+              </p>
             ) : currentLease ? (
               <p className="mt-2 text-sm text-muted-foreground md:text-base lg:text-lg">
                 Your next payment of{" "}
-                {formatCurrency(currentLease.monthlyPayment)} is due on{" "}
+                <MoneyValue
+                  status="ready"
+                  amount={currentLease.monthlyPayment}
+                  format={formatCurrency}
+                  className="font-bold text-foreground"
+                />{" "}
+                is due on{" "}
                 {new Date(currentLease.nextPaymentDate).toLocaleDateString()}
               </p>
             ) : (
@@ -256,19 +318,23 @@ export default function TenantDashboard() {
             )}
           </div>
 
-          {leaseError && (
-            <Card className="mb-6 border-3 border-foreground bg-destructive/10 p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
-                <div>
-                  <p className="font-bold">Failed to load lease information</p>
-                  <p className="text-sm text-muted-foreground">{leaseError}</p>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {currentLease && !leaseError && (
+          {leaseLoading ? (
+            <LoadingState
+              label="Loading lease totals"
+              className="mb-6 grid grid-cols-2 gap-3 md:mb-8 md:grid-cols-4 md:gap-4"
+            >
+              {Array.from({ length: 4 }).map((_, index) => (
+                <StatCardSkeleton key={`lease-stat-${index}`} className="md:p-4" />
+              ))}
+            </LoadingState>
+          ) : leaseError ? (
+            <ErrorState
+              className="mb-6 md:mb-8"
+              title="Failed to load lease information"
+              description={leaseError}
+              onRetry={retryLease}
+            />
+          ) : currentLease ? (
             <div className="mb-6 grid grid-cols-2 gap-3 md:mb-8 md:grid-cols-4 md:gap-4">
               <Card className="border-3 border-foreground p-3 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] md:p-4">
                 <div className="flex items-center gap-2 md:gap-3">
@@ -280,7 +346,11 @@ export default function TenantDashboard() {
                       Next Payment
                     </p>
                     <p className="truncate text-base font-bold md:text-xl">
-                      {formatCurrency(currentLease.monthlyPayment)}
+                      <MoneyValue
+                        status="ready"
+                        amount={currentLease.monthlyPayment}
+                        format={formatCurrency}
+                      />
                     </p>
                   </div>
                 </div>
@@ -295,7 +365,11 @@ export default function TenantDashboard() {
                       Total Paid
                     </p>
                     <p className="truncate text-base font-bold md:text-xl">
-                      {formatCurrency(currentLease.totalPaid)}
+                      <MoneyValue
+                        status="ready"
+                        amount={currentLease.totalPaid}
+                        format={formatCurrency}
+                      />
                     </p>
                   </div>
                 </div>
@@ -310,9 +384,11 @@ export default function TenantDashboard() {
                       Remaining
                     </p>
                     <p className="truncate text-base font-bold md:text-xl">
-                      {formatCurrency(
-                        currentLease.totalOwed - currentLease.totalPaid,
-                      )}
+                      <MoneyValue
+                        status="ready"
+                        amount={remainingBalance}
+                        format={formatCurrency}
+                      />
                     </p>
                   </div>
                 </div>
@@ -333,9 +409,13 @@ export default function TenantDashboard() {
                 </div>
               </Card>
             </div>
-          )}
+          ) : null}
 
-          <div className="mb-6 flex flex-wrap gap-2 md:gap-4">
+          <div
+            className="mb-6 flex flex-wrap gap-2 md:gap-4"
+            role="tablist"
+            aria-label="Dashboard sections"
+          >
             {[
               { id: "overview", label: "Overview" },
               { id: "payments", label: "Payments" },
@@ -343,6 +423,8 @@ export default function TenantDashboard() {
             ].map((tab) => (
               <button
                 key={tab.id}
+                role="tab"
+                aria-selected={activeTab === tab.id}
                 onClick={() => setActiveTab(tab.id as typeof activeTab)}
                 className={`border-3 border-foreground px-3 py-2 text-sm font-bold transition-all md:px-6 md:py-3 md:text-base ${
                   activeTab === tab.id
@@ -359,11 +441,21 @@ export default function TenantDashboard() {
             <SectionBoundary section="tenant-dashboard-overview" userRole="tenant">
             <div className="grid gap-4 md:gap-6 lg:grid-cols-2">
               {leaseLoading ? (
-                <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
-                </Card>
+                <LoadingState label="Loading your current home">
+                  <Card className="space-y-4 border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
+                    <Skeleton className="h-6 w-40" />
+                    <Skeleton className="h-40 w-full" />
+                    <Skeleton className="h-6 w-56" />
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-12 w-full" />
+                  </Card>
+                </LoadingState>
+              ) : leaseError ? (
+                <ErrorState
+                  title="Failed to load your current home"
+                  description={leaseError}
+                  onRetry={retryLease}
+                />
               ) : currentLease ? (
                 <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
                   <h3 className="mb-4 text-lg font-bold">Your Current Home</h3>
@@ -402,13 +494,12 @@ export default function TenantDashboard() {
                   </div>
                 </Card>
               ) : (
-                <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                  <p className="font-bold">No active lease</p>
-                  <p className="text-sm text-muted-foreground">
-                    You don't have an active lease at the moment. Browse
-                    properties to get started.
-                  </p>
-                </Card>
+                <EmptyState
+                  icon={Building2}
+                  title="No active lease"
+                  description="Once you're approved for a property, your lease, landlord, and payment schedule will show up here."
+                  action={{ label: "Browse properties", href: "/properties" }}
+                />
               )}
 
               <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
@@ -423,7 +514,14 @@ export default function TenantDashboard() {
                           {currentLease.progress}%
                         </span>
                       </div>
-                      <div className="h-6 border-3 border-foreground bg-muted">
+                      <div
+                        className="h-6 border-3 border-foreground bg-muted"
+                        role="progressbar"
+                        aria-valuenow={currentLease.progress}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={`Payment progress: ${currentLease.progress}%`}
+                      >
                         <div
                           className="h-full bg-secondary transition-all"
                           style={{ width: `${currentLease.progress}%` }}
@@ -431,19 +529,46 @@ export default function TenantDashboard() {
                       </div>
                       <div className="mt-2 flex justify-between text-sm text-muted-foreground">
                         <span>
-                          {formatCurrency(currentLease.totalPaid)} paid
+                          <MoneyValue
+                            status="ready"
+                            amount={currentLease.totalPaid}
+                            format={formatCurrency}
+                          />{" "}
+                          paid
                         </span>
                         <span>
-                          {formatCurrency(currentLease.totalOwed)} total
+                          <MoneyValue
+                            status="ready"
+                            amount={currentLease.totalOwed}
+                            format={formatCurrency}
+                          />{" "}
+                          total
                         </span>
                       </div>
                     </div>
 
                     <h4 className="mb-3 font-bold">Upcoming Payments</h4>
                     {paymentsLoading ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2 className="h-6 w-6 animate-spin" />
-                      </div>
+                      <LoadingState
+                        label="Loading upcoming payments"
+                        className="space-y-2"
+                      >
+                        {Array.from({ length: 3 }).map((_, index) => (
+                          <div
+                            key={`upcoming-${index}`}
+                            className="flex items-center justify-between border-b border-foreground/10 pb-2"
+                          >
+                            <Skeleton className="h-5 w-28" />
+                            <Skeleton className="h-5 w-24" />
+                          </div>
+                        ))}
+                      </LoadingState>
+                    ) : paymentsError ? (
+                      <ErrorState
+                        title="Failed to load upcoming payments"
+                        description={paymentsError}
+                        onRetry={retryPayments}
+                      />
                     ) : paymentSchedule.length > 0 ? (
                       <div className="space-y-2">
                         {paymentSchedule.slice(0, 3).map((payment) => (
@@ -468,14 +593,19 @@ export default function TenantDashboard() {
                               </span>
                             </div>
                             <span className="font-mono font-bold">
-                              {formatCurrency(payment.amount)}
+                              <MoneyValue
+                                status="ready"
+                                amount={payment.amount}
+                                format={formatCurrency}
+                              />
                             </span>
                           </div>
                         ))}
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground">
-                        No upcoming payments
+                        You&apos;re all paid up — no upcoming instalments on this
+                        lease.
                       </p>
                     )}
                   </>
@@ -498,23 +628,27 @@ export default function TenantDashboard() {
               <h3 className="mb-6 text-lg font-bold">Payment History</h3>
 
               {paymentsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                </div>
+                <LoadingState
+                  label="Loading payment history"
+                  className="space-y-3"
+                >
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <ListRowSkeleton key={`payment-${index}`} />
+                  ))}
+                </LoadingState>
               ) : paymentsError ? (
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
-                  <div>
-                    <p className="font-bold">Failed to load payments</p>
-                    <p className="text-sm text-muted-foreground">
-                      {paymentsError}
-                    </p>
-                  </div>
-                </div>
+                <ErrorState
+                  title="Failed to load payments"
+                  description={paymentsError}
+                  onRetry={retryPayments}
+                />
               ) : allPayments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No payment history yet
-                </p>
+                <EmptyState
+                  icon={Receipt}
+                  title="No payment history yet"
+                  description="Payments you make on your lease will be listed here with their receipts and status."
+                  action={{ label: "Go to payments", href: "/dashboard/tenant/payments" }}
+                />
               ) : (
                 <div className="space-y-3">
                   {allPayments.map((payment) => {
@@ -551,7 +685,11 @@ export default function TenantDashboard() {
                         </div>
                         <div className="text-right">
                           <p className="font-mono font-bold">
-                            {formatCurrency(payment.amount)}
+                            <MoneyValue
+                              status="ready"
+                              amount={payment.amount}
+                              format={formatCurrency}
+                            />
                           </p>
                           <Badge
                             variant={presentation.statusPresentation.variant}
@@ -575,30 +713,21 @@ export default function TenantDashboard() {
             <SectionBoundary section="tenant-dashboard-saved" userRole="tenant">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {savedLoading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <Card
-                    key={i}
-                    className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]"
-                  >
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-8 w-8 animate-spin" />
-                    </div>
-                  </Card>
-                ))
+                <LoadingState
+                  label="Loading saved properties"
+                  className="col-span-full grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+                >
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <PropertyCardSkeleton key={`saved-${i}`} />
+                  ))}
+                </LoadingState>
               ) : savedError ? (
-                <Card className="border-3 border-foreground bg-destructive/10 p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] col-span-full">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
-                    <div>
-                      <p className="font-bold">
-                        Failed to load saved properties
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {savedError}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
+                <ErrorState
+                  className="col-span-full"
+                  title="Failed to load saved properties"
+                  description={savedError}
+                  onRetry={retrySaved}
+                />
               ) : savedProperties.length > 0 ? (
                 <>
                   {savedProperties.map((property) => (
@@ -620,12 +749,13 @@ export default function TenantDashboard() {
                   </Card>
                 </>
               ) : (
-                <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] col-span-full">
-                  <p className="font-bold">No saved properties</p>
-                  <p className="text-sm text-muted-foreground">
-                    Browse properties and save your favorites here
-                  </p>
-                </Card>
+                <EmptyState
+                  className="col-span-full"
+                  icon={Heart}
+                  title="No saved properties yet"
+                  description="Tap the heart on any listing to keep it here, so you can compare your shortlist later."
+                  action={{ label: "Browse properties", href: "/properties" }}
+                />
               )}
             </div>
             </SectionBoundary>

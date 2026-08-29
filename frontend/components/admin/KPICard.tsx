@@ -1,10 +1,15 @@
 import React from "react";
 import { ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area } from "recharts";
+import { LoadingState } from "@/components/ui/data-state";
 
 export interface KPICardProps {
   title: string;
-  value: string | number;
+  /**
+   * Accepts a node so callers can pass `<MoneyValue>` and keep monetary figures
+   * out of the "render a fallback number" path.
+   */
+  value: React.ReactNode;
   change?: number; // e.g. 12.4 for +12.4%, -3.2 for -3.2%
   changeLabel?: string; // e.g. "vs last month"
   sparklineData?: number[]; // array of trend values
@@ -32,13 +37,16 @@ export function KPICard({
 
   if (isLoading) {
     return (
-      <div className="border-3 border-foreground bg-card p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] animate-pulse flex flex-col justify-between h-40">
+      <LoadingState
+        label={`Loading ${title}`}
+        className="border-3 border-foreground bg-card p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] animate-pulse flex flex-col justify-between h-40"
+      >
         <div>
           <div className="h-4 w-24 bg-muted border-2 border-foreground/10 mb-2"></div>
           <div className="h-8 w-32 bg-muted border-2 border-foreground/10"></div>
         </div>
         <div className="h-4 w-40 bg-muted border-2 border-foreground/10"></div>
-      </div>
+      </LoadingState>
     );
   }
 

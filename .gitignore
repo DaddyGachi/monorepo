@@ -6,6 +6,7 @@ frontend/.next
 frontend/out
 frontend/.env
 frontend/.env.*
+frontend/coverage
 
 # Backend
 backend/dist
@@ -28,3 +29,4 @@ pr.md
 checks.md
 ISSUE_437_IMPLEMENTATION.md
 ISSUE_CONTEXT.md
+.env

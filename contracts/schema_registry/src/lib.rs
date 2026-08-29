@@ -394,8 +394,8 @@ impl SchemaRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::Env;
+    use soroban_sdk::testutils::{Address as _, Events};
+    use soroban_sdk::{Env, TryIntoVal};
 
     /// Returns (env, client, admin) — each test gets a fresh contract instance.
     fn setup() -> (Env, SchemaRegistryClient<'static>, Address) {
@@ -480,5 +480,231 @@ mod tests {
         // No transition registered for 2.0.0 → 1.0.0; dry_run must fail
         let result = client.try_dry_run(&v(2, 0, 0), &v(1, 0, 0));
         assert!(result.is_err());
+    }
+
+    // ── Initialization ───────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic(expected = "already initialized")]
+    fn test_double_initialize_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(SchemaRegistry, ());
+        let client = SchemaRegistryClient::new(&env, &id);
+        let admin = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.initialize(&admin);
+    }
+
+    #[test]
+    fn test_register_transition_before_initialize_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(SchemaRegistry, ());
+        let client = SchemaRegistryClient::new(&env, &id);
+        let caller = Address::generate(&env);
+
+        let result = client.try_register_transition(&caller, &meta(&env, v(1, 0, 0), v(2, 0, 0)));
+        assert!(result.is_err());
+    }
+
+    /// Before initialization the compatibility matrix defaults to empty, so
+    /// `execute_migration` fails via `UnsupportedTransition` rather than a
+    /// dedicated "not initialized" error — there is no explicit init guard
+    /// on this path (unlike `register_transition`, which is gated by
+    /// `require_admin`). Documenting current behavior; flagged in the PR.
+    #[test]
+    fn test_execute_migration_before_initialize_fails_unsupported() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register(SchemaRegistry, ());
+        let client = SchemaRegistryClient::new(&env, &id);
+        let caller = Address::generate(&env);
+        let hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+
+        let result = client.try_execute_migration(&caller, &v(1, 0, 0), &v(1, 1, 0), &hash);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            RegistryError::UnsupportedTransition
+        );
+    }
+
+    // ── Authorization ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_register_transition_unauthorized_fails() {
+        let (env, client, _admin) = setup();
+        let stranger = Address::generate(&env);
+
+        let result = client.try_register_transition(&stranger, &meta(&env, v(1, 0, 0), v(2, 0, 0)));
+        assert!(result.is_err());
+        assert!(!client.is_transition_supported(&v(1, 0, 0), &v(2, 0, 0)));
+    }
+
+    /// `execute_migration` only requires that `caller` authenticate as
+    /// themselves (`caller.require_auth()`); it never checks `caller`
+    /// against the registry admin the way `register_transition` does. Any
+    /// address that can produce a valid signature may execute an already
+    /// registered migration. This looks like an authorization gap rather
+    /// than intended design — flagging it here rather than treating it as a
+    /// bug fix, per the issue's "report, don't fix" scope.
+    #[test]
+    fn test_execute_migration_allows_non_admin_caller() {
+        let (env, client, admin) = setup();
+        client.register_transition(&admin, &meta(&env, v(1, 0, 0), v(1, 1, 0)));
+
+        let stranger = Address::generate(&env);
+        let hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+        let result = client.try_execute_migration(&stranger, &v(1, 0, 0), &v(1, 1, 0), &hash);
+        assert!(
+            result.is_ok(),
+            "documents current behavior: non-admin callers are not rejected"
+        );
+    }
+
+    // ── Failure paths / boundaries ───────────────────────────────────────────
+
+    #[test]
+    fn test_register_transition_same_source_and_target_rejected() {
+        let (env, client, admin) = setup();
+
+        let result = client.try_register_transition(&admin, &meta(&env, v(1, 0, 0), v(1, 0, 0)));
+        assert_eq!(result.unwrap_err().unwrap(), RegistryError::InvalidVersion);
+    }
+
+    /// Registering the same (source, target) pair twice silently overwrites
+    /// the stored metadata rather than rejecting the second call. Documenting
+    /// current behavior; flagged in the PR as ambiguous — should a duplicate
+    /// registration be rejected instead?
+    #[test]
+    fn test_register_transition_overwrites_existing_entry() {
+        let (env, client, admin) = setup();
+        client.register_transition(&admin, &meta(&env, v(1, 0, 0), v(1, 1, 0)));
+
+        let mut updated = meta(&env, v(1, 0, 0), v(1, 1, 0));
+        updated.requires_dry_run = false;
+        client.register_transition(&admin, &updated);
+
+        assert!(client.is_transition_supported(&v(1, 0, 0), &v(1, 1, 0)));
+    }
+
+    #[test]
+    fn test_execute_migration_version_mismatch_fails() {
+        let (env, client, admin) = setup();
+        // Registry starts at 1.0.0; register a transition whose declared
+        // source does not match the current registry version.
+        client.register_transition(&admin, &meta(&env, v(1, 1, 0), v(1, 2, 0)));
+
+        let exec = Address::generate(&env);
+        let hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+        let result = client.try_execute_migration(&exec, &v(1, 1, 0), &v(1, 2, 0), &hash);
+        assert_eq!(result.unwrap_err().unwrap(), RegistryError::VersionMismatch);
+
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        let topics: soroban_sdk::Vec<soroban_sdk::Val> = last.1.clone();
+        let name: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(name, Symbol::new(&env, "migration_rejected"));
+    }
+
+    #[test]
+    fn test_registered_downgrade_fails_invariant_check() {
+        let (env, client, admin) = setup();
+        // Advance the registry to 2.0.0 via a normal upgrade first.
+        client.register_transition(&admin, &meta(&env, v(1, 0, 0), v(2, 0, 0)));
+        let exec = Address::generate(&env);
+        let hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+        client.execute_migration(&exec, &v(1, 0, 0), &v(2, 0, 0), &hash);
+
+        // Registering a downgrade is permitted at registration time (only
+        // source == target is rejected there); the "target must exceed
+        // source" invariant is only enforced at dry_run / execute time.
+        client.register_transition(&admin, &meta(&env, v(2, 0, 0), v(1, 0, 0)));
+
+        let dry = client.dry_run(&v(2, 0, 0), &v(1, 0, 0));
+        assert!(matches!(dry, InvariantResult::Fail(_)));
+
+        let result = client.try_execute_migration(&exec, &v(2, 0, 0), &v(1, 0, 0), &hash);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            RegistryError::InvariantViolation
+        );
+    }
+
+    #[test]
+    fn test_major_bump_without_minor_reset_fails_invariant_check() {
+        let (env, client, admin) = setup();
+        client.register_transition(&admin, &meta(&env, v(1, 5, 0), v(2, 3, 0)));
+
+        let dry = client.dry_run(&v(1, 5, 0), &v(2, 3, 0));
+        assert!(matches!(dry, InvariantResult::Fail(_)));
+    }
+
+    // ── Queries ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_receipt_absent_then_present() {
+        let (env, client, admin) = setup();
+        client.register_transition(&admin, &meta(&env, v(1, 0, 0), v(1, 1, 0)));
+        assert!(client.get_receipt(&v(1, 0, 0), &v(1, 1, 0)).is_none());
+
+        let exec = Address::generate(&env);
+        let hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+        client.execute_migration(&exec, &v(1, 0, 0), &v(1, 1, 0), &hash);
+
+        let receipt = client.get_receipt(&v(1, 0, 0), &v(1, 1, 0));
+        assert!(receipt.is_some());
+        assert_eq!(receipt.unwrap().executed_by, exec);
+    }
+
+    #[test]
+    fn test_verify_migration_true_and_false_cases() {
+        let (env, client, admin) = setup();
+        client.register_transition(&admin, &meta(&env, v(1, 0, 0), v(1, 1, 0)));
+
+        let exec = Address::generate(&env);
+        let hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+        let receipt = client.execute_migration(&exec, &v(1, 0, 0), &v(1, 1, 0), &hash);
+
+        assert!(client.verify_migration(&receipt.migration_id, &v(1, 1, 0)));
+        assert!(!client.verify_migration(&receipt.migration_id, &v(9, 9, 9)));
+        assert!(!client.verify_migration(&999, &v(1, 1, 0)));
+    }
+
+    #[test]
+    fn test_migration_id_increments_across_migrations() {
+        let (env, client, admin) = setup();
+        client.register_transition(&admin, &meta(&env, v(1, 0, 0), v(1, 1, 0)));
+        client.register_transition(&admin, &meta(&env, v(1, 1, 0), v(1, 2, 0)));
+
+        let exec = Address::generate(&env);
+        let hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+        let r1 = client.execute_migration(&exec, &v(1, 0, 0), &v(1, 1, 0), &hash);
+        let r2 = client.execute_migration(&exec, &v(1, 1, 0), &v(1, 2, 0), &hash);
+
+        assert_eq!(r1.migration_id, 1);
+        assert_eq!(r2.migration_id, 2);
+    }
+
+    // ── Events ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_execute_migration_emits_event_and_advances_version() {
+        let (env, client, admin) = setup();
+        client.register_transition(&admin, &meta(&env, v(1, 0, 0), v(1, 1, 0)));
+
+        let exec = Address::generate(&env);
+        let hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+        let receipt = client.execute_migration(&exec, &v(1, 0, 0), &v(1, 1, 0), &hash);
+        assert_eq!(receipt.migration_id, 1);
+
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        let topics: soroban_sdk::Vec<soroban_sdk::Val> = last.1.clone();
+        let name: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+        assert_eq!(name, Symbol::new(&env, "migration_executed"));
+
+        assert_eq!(client.registry_version(), v(1, 1, 0));
     }
 }

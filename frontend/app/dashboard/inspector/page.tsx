@@ -12,6 +12,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  StatCardSkeleton,
+} from "@/components/ui/data-state";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { JobCard } from "@/components/inspector/JobCard";
@@ -126,25 +132,25 @@ export default function InspectorDashboard() {
 
           {/* Error */}
           {error && !isLoading && (
-            <Card className="mb-8 border-3 border-foreground p-6 text-center shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-              <p className="text-destructive">{error}</p>
-              <Button
-                onClick={fetchJobs}
-                className="mt-4 border-3 border-foreground bg-primary shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Retry
-              </Button>
-            </Card>
+            <ErrorState
+              className="mb-8"
+              title="Failed to load inspection jobs"
+              description={error}
+              onRetry={fetchJobs}
+              retryLabel="Retry"
+            />
           )}
 
           {/* Stats */}
           {isLoading ? (
-            <div className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <LoadingState
+              label="Loading inspection stats"
+              className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4"
+            >
               {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} className="h-32 border-3 border-foreground" />
+                <StatCardSkeleton key={i} className="h-32" />
               ))}
-            </div>
+            </LoadingState>
           ) : (
             <div className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {stats.map((stat, index) => {
@@ -207,23 +213,29 @@ export default function InspectorDashboard() {
 
           {/* Job Board */}
           {isLoading ? (
-            <div className="grid gap-6 md:grid-cols-2">
+            <LoadingState
+              label="Loading inspection jobs"
+              className="grid gap-6 md:grid-cols-2"
+            >
               {[1, 2, 3, 4].map((i) => (
                 <Skeleton key={i} className="h-48 border-3 border-foreground" />
               ))}
-            </div>
+            </LoadingState>
           ) : filteredJobs.length === 0 ? (
-            <Card className="border-3 border-foreground p-12 text-center shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-              <FileText className="mx-auto h-16 w-16 text-muted-foreground" />
-              <h3 className="mt-4 text-xl font-bold text-foreground">
-                No jobs found
-              </h3>
-              <p className="mt-2 text-muted-foreground">
-                {filter === "all"
-                  ? "There are no inspection jobs available at the moment."
-                  : `There are no ${filter.replace("_", " ")} jobs.`}
-              </p>
-            </Card>
+            <EmptyState
+              icon={FileText}
+              title="No jobs found"
+              description={
+                filter === "all"
+                  ? "There are no inspection jobs available right now. New jobs appear as landlords list properties — check back shortly."
+                  : `No ${filter.replace("_", " ")} jobs. Switch to "All Jobs" to see everything on the board.`
+              }
+              action={
+                filter === "all"
+                  ? { label: "Refresh job board", onClick: fetchJobs }
+                  : { label: "Show all jobs", onClick: () => setFilter("all") }
+              }
+            />
           ) : (
             <div className="grid gap-6 md:grid-cols-2">
               {filteredJobs.map((job) => (

@@ -2,6 +2,12 @@
 
 > **EVM + Soroban** deployment scripts for the Shelterflex contract suite.
 
+> **Doing a real deployment?** This README documents the scripts and their
+> configuration. The ordered procedure around them — WASM hash verification,
+> transferring admin authority to the multisig, the timelock, rollback limits,
+> and the testnet/mainnet gate — is in
+> [`docs/contracts/RUNBOOK.md`](../../docs/contracts/RUNBOOK.md).
+
 ---
 
 ## Overview

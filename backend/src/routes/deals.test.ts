@@ -300,6 +300,43 @@ describe('Deals API', () => {
 
       expect(response.body.error.code).toBe('NOT_FOUND')
     })
+
+    it('rejects a payment that would push rent-to-own equity over the property value', async () => {
+      // termMonths=3 -> financedAmountNgn (960000) is split exactly across 3
+      // periods, so accumulated equity hits the cap once all three are paid.
+      const createResponse = await request(app)
+        .post('/api/deals')
+        .send({
+          tenantId: 'tenant-001',
+          landlordId: 'landlord-001',
+          annualRentNgn: 1200000,
+          depositNgn: 240000,
+          termMonths: 3
+        })
+
+      const dealId = createResponse.body.data.dealId
+
+      await request(app).patch(`/api/deals/${dealId}/schedule/1`).send({ status: 'paid' }).expect(200)
+      await request(app).patch(`/api/deals/${dealId}/schedule/2`).send({ status: 'paid' }).expect(200)
+      await request(app).patch(`/api/deals/${dealId}/schedule/3`).send({ status: 'paid' }).expect(200)
+
+      // Accumulated equity now equals the cap (financedAmountNgn). Re-recording
+      // period 1's payment mirrors a duplicate/replayed on-chain
+      // record_equity_payment call and must be rejected before it is
+      // accepted as "paid" — mirroring the rent_to_own contract's
+      // EquityOverflow guard.
+      const response = await request(app)
+        .patch(`/api/deals/${dealId}/schedule/1`)
+        .send({ status: 'paid' })
+        .expect(409)
+
+      expect(response.body.error.code).toBe('EQUITY_OVERFLOW')
+
+      // The schedule item's status must be unchanged by the rejected request.
+      const dealAfter = await request(app).get(`/api/deals/${dealId}`).expect(200)
+      const period1 = dealAfter.body.data.schedule.find((item: any) => item.period === 1)
+      expect(period1.status).toBe('paid')
+    })
   })
 
   describe('GET /api/deals/:dealId/progress', () => {

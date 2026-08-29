@@ -3,10 +3,21 @@ import { LegalPage } from "@/components/legal/LegalPage";
 
 export const dynamic = "force-static";
 
+/**
+ * Non-canonical duplicate of `/privacy-policy`.
+ *
+ * Every section below is placeholder text, while `/privacy-policy` carries the
+ * substantive policy and is the route the app links to. Until a maintainer
+ * confirms which route is canonical (see #1446), this one is excluded from
+ * indexing and points its canonical URL at `/privacy-policy` so search engines
+ * cannot deliver a user to the placeholder version.
+ */
 export const metadata: Metadata = {
-  title: "Privacy Policy — Shelterflex",
+  title: "Privacy Policy",
   description:
     "Learn how Shelterflex collects, uses, and protects your personal data. Official legal copy will be updated before launch.",
+  alternates: { canonical: "/privacy-policy" },
+  robots: { index: false, follow: false },
 };
 
 const PLACEHOLDER =

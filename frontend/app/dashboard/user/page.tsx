@@ -1,24 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  Building2,
-  CreditCard,
-  Wallet,
-  Loader2,
-  AlertTriangle,
-} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Building2, CreditCard, Wallet } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
+  EmptyState,
+  ErrorState,
+  ListRowSkeleton,
+  LoadingState,
+  MoneyValue,
+  StatCardSkeleton,
+} from "@/components/ui/data-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserPropertyCard } from "@/components/user-dashboard/UserPropertyCard";
 import { ApplicationsTable } from "@/components/user-dashboard/ApplicationsTable";
@@ -63,7 +57,7 @@ export default function UserDashboardPage() {
   const [walletLoading, setWalletLoading] = useState(true);
   const [walletError, setWalletError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadSaved = useCallback(() => {
     fetchSavedListingIds()
       .then((ids) => {
         if (ids.length === 0) {
@@ -91,7 +85,7 @@ export default function UserDashboardPage() {
       .finally(() => setSavedLoading(false));
   }, []);
 
-  useEffect(() => {
+  const loadApplications = useCallback(() => {
     listTenantApplications()
       .then((res) => {
         const apps: UserRentalApplication[] = res.data.map((app) => ({
@@ -116,7 +110,7 @@ export default function UserDashboardPage() {
       .finally(() => setAppsLoading(false));
   }, []);
 
-  useEffect(() => {
+  const loadWallet = useCallback(() => {
     Promise.all([getNgnBalance(), getNgnLedger({ limit: 20 })])
       .then(([balanceRes, ledgerRes]) => {
         const balance: WalletBalance = {
@@ -133,7 +127,7 @@ export default function UserDashboardPage() {
           id: e.id,
           type: e.type as WalletLedgerEntry["type"],
           amountNgn: e.amountNgn,
-          amountUsdc: e.amountUsdc,
+          amountUsdc: (e as any).amountUsdc,
           status: e.status,
           timestamp: e.timestamp,
           reference: e.reference || null,
@@ -149,6 +143,38 @@ export default function UserDashboardPage() {
       })
       .finally(() => setWalletLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadSaved();
+  }, [loadSaved]);
+
+  useEffect(() => {
+    loadApplications();
+  }, [loadApplications]);
+
+  useEffect(() => {
+    loadWallet();
+  }, [loadWallet]);
+
+  // Retry handlers reset to the loading state before re-fetching. Kept separate
+  // from the loaders above so the mount effects never call setState synchronously.
+  const retrySaved = useCallback(() => {
+    setSavedLoading(true);
+    setSavedError(null);
+    loadSaved();
+  }, [loadSaved]);
+
+  const retryApplications = useCallback(() => {
+    setAppsLoading(true);
+    setAppsError(null);
+    loadApplications();
+  }, [loadApplications]);
+
+  const retryWallet = useCallback(() => {
+    setWalletLoading(true);
+    setWalletError(null);
+    loadWallet();
+  }, [loadWallet]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -174,53 +200,42 @@ export default function UserDashboardPage() {
                 value="my-properties"
                 className="flex-1 md:flex-none"
               >
-                <Building2 className="h-4 w-4" />
+                <Building2 className="h-4 w-4" aria-hidden="true" />
                 My Properties
               </TabsTrigger>
               <TabsTrigger value="applications" className="flex-1 md:flex-none">
-                <CreditCard className="h-4 w-4" />
+                <CreditCard className="h-4 w-4" aria-hidden="true" />
                 Applications
               </TabsTrigger>
               <TabsTrigger value="wallet" className="flex-1 md:flex-none">
-                <Wallet className="h-4 w-4" />
+                <Wallet className="h-4 w-4" aria-hidden="true" />
                 Wallet
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="my-properties" className="mt-4">
               {savedLoading ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <LoadingState
+                  label="Loading saved properties"
+                  className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+                >
                   {Array.from({ length: 6 }).map((_, i) => (
                     <Skeleton key={i} className="h-24 w-full" />
                   ))}
-                </div>
+                </LoadingState>
               ) : savedError ? (
-                <Card className="border-3 border-foreground bg-destructive/10 p-6">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
-                    <div>
-                      <p className="font-bold">
-                        Failed to load saved properties
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {savedError}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
+                <ErrorState
+                  title="Failed to load saved properties"
+                  description={savedError}
+                  onRetry={retrySaved}
+                />
               ) : savedProperties.length === 0 ? (
-                <Empty className="border-2 border-foreground/20 bg-card">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <Building2 />
-                    </EmptyMedia>
-                    <EmptyTitle>No saved properties yet</EmptyTitle>
-                    <EmptyDescription>
-                      Shortlist properties to see them here.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent />
-                </Empty>
+                <EmptyState
+                  icon={Building2}
+                  title="No saved properties yet"
+                  description="Shortlist properties as you browse and they'll be waiting for you here."
+                  action={{ label: "Browse properties", href: "/properties" }}
+                />
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {savedProperties.map((p) => (
@@ -232,33 +247,24 @@ export default function UserDashboardPage() {
 
             <TabsContent value="applications" className="mt-4">
               {appsLoading ? (
-                <Skeleton className="h-64 w-full" />
+                <LoadingState label="Loading applications" className="space-y-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <ListRowSkeleton key={i} />
+                  ))}
+                </LoadingState>
               ) : appsError ? (
-                <Card className="border-3 border-foreground bg-destructive/10 p-6">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
-                    <div>
-                      <p className="font-bold">Failed to load applications</p>
-                      <p className="text-sm text-muted-foreground">
-                        {appsError}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
+                <ErrorState
+                  title="Failed to load applications"
+                  description={appsError}
+                  onRetry={retryApplications}
+                />
               ) : applications.length === 0 ? (
-                <Empty className="border-2 border-foreground/20 bg-card">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <CreditCard />
-                    </EmptyMedia>
-                    <EmptyTitle>No applications yet</EmptyTitle>
-                    <EmptyDescription>
-                      When you submit rental applications, they will appear
-                      here.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent />
-                </Empty>
+                <EmptyState
+                  icon={CreditCard}
+                  title="No applications yet"
+                  description="Apply for a property you like and you'll be able to track its progress from here."
+                  action={{ label: "Find a property", href: "/properties" }}
+                />
               ) : (
                 <Card className="border-2 border-foreground/20">
                   <CardHeader>
@@ -273,26 +279,24 @@ export default function UserDashboardPage() {
 
             <TabsContent value="wallet" className="mt-4">
               {walletLoading ? (
-                <div className="grid gap-4">
+                <LoadingState label="Loading wallet balance" className="grid gap-4">
                   <div className="grid gap-4 md:grid-cols-3">
-                    <Skeleton className="h-28 w-full" />
-                    <Skeleton className="h-28 w-full" />
-                    <Skeleton className="h-28 w-full" />
+                    <StatCardSkeleton className="h-28" />
+                    <StatCardSkeleton className="h-28" />
+                    <StatCardSkeleton className="h-28" />
                   </div>
-                  <Skeleton className="h-64 w-full" />
-                </div>
+                  <div className="space-y-3">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <ListRowSkeleton key={i} />
+                    ))}
+                  </div>
+                </LoadingState>
               ) : walletError ? (
-                <Card className="border-3 border-foreground bg-destructive/10 p-6">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
-                    <div>
-                      <p className="font-bold">Failed to load wallet</p>
-                      <p className="text-sm text-muted-foreground">
-                        {walletError}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
+                <ErrorState
+                  title="Failed to load wallet"
+                  description={walletError}
+                  onRetry={retryWallet}
+                />
               ) : walletBalance ? (
                 <div className="grid gap-4">
                   <div className="grid gap-4 md:grid-cols-3">
@@ -302,10 +306,22 @@ export default function UserDashboardPage() {
                       </CardHeader>
                       <CardContent>
                         <div className="font-mono text-2xl font-black text-primary">
-                          {formatNgn(walletBalance.availableNgn)}
+                          <MoneyValue
+                            status="ready"
+                            amount={walletBalance.availableNgn}
+                            format={formatNgn}
+                            unavailableLabel="Available balance unavailable"
+                          />
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          Held: {formatNgn(walletBalance.heldNgn)}
+                          Held:{" "}
+                          <MoneyValue
+                            status="ready"
+                            amount={walletBalance.heldNgn}
+                            format={formatNgn}
+                            skeletonClassName="h-3 w-16"
+                            unavailableLabel="Held balance unavailable"
+                          />
                         </div>
                       </CardContent>
                     </Card>
@@ -331,7 +347,12 @@ export default function UserDashboardPage() {
                       <CardContent>
                         <div className="text-sm text-muted-foreground">NGN</div>
                         <div className="font-mono font-black text-foreground">
-                          {formatNgn(walletBalance.totalNgn)}
+                          <MoneyValue
+                            status="ready"
+                            amount={walletBalance.totalNgn}
+                            format={formatNgn}
+                            unavailableLabel="Total NGN unavailable"
+                          />
                         </div>
                         <div className="mt-3 text-sm text-muted-foreground">
                           USDC
@@ -344,24 +365,21 @@ export default function UserDashboardPage() {
                   </div>
 
                   {ledgerEntries.length === 0 ? (
-                    <Empty className="border-2 border-foreground/20 bg-card">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <Wallet />
-                        </EmptyMedia>
-                        <EmptyTitle>No transactions yet</EmptyTitle>
-                        <EmptyDescription>
-                          Your wallet ledger entries will appear here.
-                        </EmptyDescription>
-                      </EmptyHeader>
-                      <EmptyContent />
-                    </Empty>
+                    <EmptyState
+                      icon={Wallet}
+                      title="No transactions yet"
+                      description="Top up your wallet to cover rent instalments — every movement shows up in this ledger."
+                      action={{ label: "Go to wallet", href: "/wallet" }}
+                    />
                   ) : (
                     <Card className="border-2 border-foreground/20">
                       <CardHeader>
                         <CardTitle>Transaction history</CardTitle>
                       </CardHeader>
                       <CardContent>
+                        <div aria-live="polite" aria-atomic="true" className="sr-only">
+                          {`Loaded ${ledgerEntries.length} transaction${ledgerEntries.length !== 1 ? "s" : ""}.`}
+                        </div>
                         <WalletLedgerTable entries={ledgerEntries} />
                       </CardContent>
                     </Card>

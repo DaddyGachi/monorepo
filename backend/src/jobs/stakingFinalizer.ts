@@ -1,6 +1,7 @@
 import { conversionStore } from '../models/conversionStore.js'
 import { StakingService } from '../services/stakingService.js'
 import { logger } from '../utils/logger.js'
+import { observeJobRun } from './jobObservability.js'
 
 export class StakingFinalizer {
   private interval: NodeJS.Timeout | null = null
@@ -34,13 +35,15 @@ export class StakingFinalizer {
   }
 
   async poll() {
-    try {
+    await observeJobRun('staking-finalizer', async () => {
       const completedConversions = await conversionStore.listCompleted()
-      
+      let finalized = 0
+
       for (const conversion of completedConversions) {
         try {
           // Finalize staking (idempotent inside service)
           await this.stakingService.finalizeStaking(conversion.conversionId)
+          finalized++
         } catch (error) {
           // Log error but continue with other conversions
           logger.error('Failed to finalize conversion in background job', {
@@ -49,10 +52,8 @@ export class StakingFinalizer {
           })
         }
       }
-    } catch (error) {
-      logger.error('Error in StakingFinalizer poll', {
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
+
+      return { recordsProcessed: finalized }
+    })
   }
 }

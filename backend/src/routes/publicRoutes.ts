@@ -17,7 +17,7 @@ registerEndpointCache('/soroban/config', {
 
 registerEndpointCache('/api/example/echo', CachePresets.noCache)
 
-const statsCache = new MemoryCacheLayer<unknown>({
+const statsCache = new MemoryCacheLayer<Record<string, unknown>>({
   max: 10,
   ttlMs: 300000,
 })

@@ -82,6 +82,14 @@ export interface StatusPollResponse {
   status: TransactionStatus;
 }
 
+export interface ClaimRewardResponse {
+  success: boolean;
+  outboxId: string;
+  txId: string;
+  status: 'CONFIRMED' | 'QUEUED';
+  message: string;
+}
+
 // Custom error class
 export class NgnStakingApiError extends Error {
   constructor(
@@ -179,5 +187,32 @@ export async function getTransactionStatus(
       undefined,
       error
     );
+  }
+}
+
+/**
+ * Claim accrued staking rewards and record the transaction on-chain.
+ * Backend: POST /api/staking/claim (backend/src/routes/staking.ts)
+ */
+export async function claimReward(): Promise<ClaimRewardResponse> {
+  try {
+    const response = await apiFetch<ClaimRewardResponse>('/api/staking/claim', {
+      method: 'POST',
+      body: JSON.stringify({
+        externalRefSource: 'web',
+        externalRef: crypto.randomUUID(),
+      }),
+    });
+
+    if (!response.success || !response.txId) {
+      throw new NgnStakingApiError('Invalid claim response from server');
+    }
+
+    return response;
+  } catch (error) {
+    if (error instanceof NgnStakingApiError) {
+      throw error;
+    }
+    throw new NgnStakingApiError('Failed to claim staking reward', undefined, error);
   }
 }

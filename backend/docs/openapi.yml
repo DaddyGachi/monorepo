@@ -7,6 +7,7 @@ info:
     name: ShelterFlex Team
   license:
     name: MIT
+    url: https://opensource.org/licenses/MIT
 
 servers:
   - url: http://localhost:4000
@@ -22,6 +23,7 @@ paths:
       operationId: getHealth
       tags:
         - Health
+      security: []
       responses:
         "200":
           description: Service is healthy
@@ -57,6 +59,7 @@ paths:
       operationId: requestOtp
       tags:
         - Auth
+      security: []
       requestBody:
         required: true
         content:
@@ -94,6 +97,7 @@ paths:
       operationId: verifyOtp
       tags:
         - Auth
+      security: []
       requestBody:
         required: true
         content:
@@ -127,6 +131,8 @@ paths:
                     description: "Session token to be used as Authorization: Bearer <token>"
                   user:
                     $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/Error"
 
@@ -152,6 +158,8 @@ paths:
                   message:
                     type: string
                     example: Logged out
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         default:
           $ref: "#/components/responses/Error"
 
@@ -176,6 +184,8 @@ paths:
                 properties:
                   user:
                     $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         default:
           $ref: "#/components/responses/Error"
 
@@ -211,6 +221,8 @@ paths:
                 properties:
                   messageEmailsEnabled:
                     type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         default:
           $ref: "#/components/responses/Error"
 
@@ -221,6 +233,7 @@ paths:
       operationId: walletChallenge
       tags:
         - Auth
+      security: []
       requestBody:
         required: true
         content:
@@ -234,6 +247,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WalletChallengeResponse'
+        "400":
+          $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/Error"
 
@@ -244,6 +259,7 @@ paths:
       operationId: walletVerify
       tags:
         - Auth
+      security: []
       requestBody:
         required: true
         content:
@@ -257,6 +273,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthTokenResponse'
+        "400":
+          $ref: "#/components/responses/ValidationError"
         default:
           $ref: "#/components/responses/Error"
 
@@ -276,13 +294,109 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RiskStateResponse'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/admin/jobs/health:
+    get:
+      summary: Scheduled job and worker health
+      description: >-
+        Health of every scheduled job and background worker: what it does, when
+        it last ran, how long that run took, how many records it processed, and
+        whether it is overdue. A job that has stopped being scheduled reports
+        state "overdue" (or "never_ran") so a missing run is detectable as an
+        absence rather than only as an error. Requires the x-admin-secret header
+        when MANUAL_ADMIN_SECRET is configured.
+      operationId: getJobHealth
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      responses:
+        "200":
+          description: Job health report
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [capturedAt, overdueCount, failingCount, jobs]
+                properties:
+                  capturedAt:
+                    type: string
+                    format: date-time
+                  overdueCount:
+                    type: integer
+                  failingCount:
+                    type: integer
+                  jobs:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, module, does, expectedIntervalMs, state, overdue]
+                      properties:
+                        name:
+                          type: string
+                        module:
+                          type: string
+                        does:
+                          type: string
+                        expectedIntervalMs:
+                          type: integer
+                        ifItDoesNotRun:
+                          type: string
+                        healthy:
+                          type: string
+                        state:
+                          type: string
+                          enum: [healthy, failing, overdue, never_ran]
+                        overdue:
+                          type: boolean
+                        secondsSinceLastRun:
+                          type: integer
+                          nullable: true
+                        lastSuccessAt:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        consecutiveFailures:
+                          type: integer
+                        lastRun:
+                          type: object
+                          nullable: true
+                          properties:
+                            startedAt:
+                              type: string
+                              format: date-time
+                            finishedAt:
+                              type: string
+                              format: date-time
+                            durationMs:
+                              type: integer
+                            outcome:
+                              type: string
+                              enum: [completed, failed, skipped_overrun]
+                            recordsProcessed:
+                              type: integer
+                            correlationId:
+                              type: string
+                              nullable: true
+                            error:
+                              type: string
+        "403":
+          description: Invalid admin secret
         default:
           $ref: "#/components/responses/Error"
 
   /api/admin/receipts:
     get:
       summary: Query indexed receipts
-      description: Query receipts indexed off-chain (no Soroban call).
+      description: >-
+        Query receipts indexed off-chain (no Soroban call). Note: despite the
+        /admin path prefix, this endpoint only requires an authenticated
+        session (authenticateToken) — the route handler does not check for an
+        admin role.
       operationId: queryReceipts
       tags:
         - Admin
@@ -321,16 +435,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PagedReceipts'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         default:
           $ref: "#/components/responses/Error"
 
   /api/deals/{dealId}/receipts:
     get:
       summary: List receipts for a deal
-      description: Returns all receipts for a deal.
+      description: >-
+        Returns all receipts for a deal. Note: the route has no auth
+        middleware today (see PR description — code/spec mismatch finding).
       operationId: listDealReceipts
       tags:
         - Deals
+      security: []
       parameters:
         - name: dealId
           in: path
@@ -344,6 +463,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DealReceiptsResponse'
+        "404":
+          description: Deal not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         default:
           $ref: "#/components/responses/Error"
 
@@ -354,6 +479,7 @@ paths:
       operationId: createSupportMessage
       tags:
         - Support
+      security: []
       requestBody:
         required: true
         content:
@@ -408,6 +534,7 @@ paths:
       operationId: listWhistleblowerRatings
       tags:
         - Whistleblower
+      security: []
       parameters:
         - name: id
           in: path
@@ -448,6 +575,7 @@ paths:
       operationId: getWhistleblowerRatingAggregate
       tags:
         - Whistleblower
+      security: []
       parameters:
         - name: id
           in: path
@@ -472,6 +600,256 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/epoch-rewards/stake:
+    post:
+      summary: Stake tokens in epoch rewards contract
+      description: Stake tokens to participate in epoch rewards program.
+      operationId: epochStake
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: string
+                  description: Amount to stake as string (to handle large numbers)
+                  example: "1000000"
+      responses:
+        "200":
+          description: Stake submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, txHash]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  txHash:
+                    type: string
+                    description: Stellar transaction hash
+                    example: "a3f2c1d4e5b6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/unstake:
+    post:
+      summary: Unstake tokens from epoch rewards contract
+      description: Unstake previously staked tokens from epoch rewards program.
+      operationId: epochUnstake
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: string
+                  description: Amount to unstake as string
+                  example: "500000"
+      responses:
+        "200":
+          description: Unstake submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, txHash]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  txHash:
+                    type: string
+                    description: Stellar transaction hash
+                    example: "b4f3d2e5f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/claim:
+    post:
+      summary: Claim epoch rewards
+      description: Claim available rewards from the epoch rewards contract.
+      operationId: epochClaim
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Rewards claimed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, claimedAmount]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  claimedAmount:
+                    type: string
+                    description: Amount claimed as string
+                    example: "1000"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/claimable:
+    get:
+      summary: Get claimable rewards amount
+      description: Query the amount of rewards available to claim for the authenticated user.
+      operationId: epochGetClaimable
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Claimable amount retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, claimable]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  claimable:
+                    type: string
+                    description: Amount available to claim as string
+                    example: "500"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/epoch/{epochNumber}:
+    get:
+      summary: Get epoch information
+      description: Retrieve detailed information about a specific epoch.
+      operationId: epochGetEpoch
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epochNumber
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: The epoch number to query
+      responses:
+        "200":
+          description: Epoch information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/EpochInfo"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/current-epoch:
+    get:
+      summary: Get current epoch number
+      description: Retrieve the current epoch number from the epoch rewards contract.
+      operationId: epochGetCurrentEpoch
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current epoch number retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, currentEpoch]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  currentEpoch:
+                    type: integer
+                    description: Current epoch number
+                    example: 1
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/epoch-rewards/total-staked:
+    get:
+      summary: Get total staked amount
+      description: Retrieve the total amount of tokens staked in the epoch rewards contract.
+      operationId: epochGetTotalStaked
+      tags:
+        - Epoch Rewards
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Total staked amount retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, totalStaked]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  totalStaked:
+                    type: string
+                    description: Total staked amount as string
+                    example: "1000000"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/property-issue-reports:
     post:
       summary: Submit a property issue report
@@ -479,6 +857,7 @@ paths:
       operationId: createPropertyIssueReport
       tags:
         - Risk
+      security: []
       requestBody:
         required: true
         content:
@@ -504,6 +883,7 @@ paths:
       operationId: getSorobanConfig
       tags:
         - Soroban
+      security: []
       responses:
         "200":
           description: Soroban configuration retrieved successfully
@@ -539,6 +919,7 @@ paths:
       operationId: getWhistleblowerEarnings
       tags:
         - Whistleblower
+      security: []
       parameters:
         - name: id
           in: path
@@ -665,6 +1046,7 @@ paths:
       operationId: createListing
       tags:
         - Whistleblower
+      security: []
       requestBody:
         required: true
         content:
@@ -737,6 +1119,7 @@ paths:
       operationId: listListings
       tags:
         - Whistleblower
+      security: []
       parameters:
         - name: status
           in: query
@@ -856,6 +1239,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WithdrawalHistoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         default:
           $ref: '#/components/responses/Error'
 
@@ -866,8 +1251,10 @@ paths:
       operationId: approveNgnWithdrawal
       tags:
         - Admin
+      # requirePermission('payouts', 'trigger') in code — admin-tier RBAC permission,
+      # not just an authenticated session. See bearerAdminAuth description.
       security:
-        - bearerAuth: []
+        - bearerAdminAuth: []
       parameters:
         - name: id
           in: path
@@ -881,6 +1268,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WithdrawalResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is authenticated but lacks the payouts:trigger permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           $ref: '#/components/responses/Error'
         default:
@@ -893,8 +1288,10 @@ paths:
       operationId: rejectNgnWithdrawal
       tags:
         - Admin
+      # requirePermission('payouts', 'trigger') in code — admin-tier RBAC permission,
+      # not just an authenticated session. See bearerAdminAuth description.
       security:
-        - bearerAuth: []
+        - bearerAdminAuth: []
       parameters:
         - name: id
           in: path
@@ -919,6 +1316,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WithdrawalResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is authenticated but lacks the payouts:trigger permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           $ref: '#/components/responses/Error'
         default:
@@ -931,6 +1336,7 @@ paths:
       operationId: getListingById
       tags:
         - Whistleblower
+      security: []
       parameters:
         - name: id
           in: path
@@ -1057,6 +1463,9 @@ paths:
       operationId: confirmPayment
       tags:
         - Payments
+      # NOTE: createPaymentsRouter() applies no auth middleware to this route today (see PR
+      # description — code/spec mismatch finding). security:[] reflects the current code.
+      security: []
       requestBody:
         required: true
         content:
@@ -1124,6 +1533,9 @@ paths:
       operationId: createDeal
       tags:
         - Deals
+      # NOTE: createDealsRouter() applies no auth middleware to any /api/deals route today
+      # (see PR description — code/spec mismatch finding). security:[] reflects current code.
+      security: []
       requestBody:
         required: true
         content:
@@ -1205,6 +1617,7 @@ paths:
       operationId: getDeals
       tags:
         - Deals
+      security: []
       parameters:
         - name: tenantId
           in: query
@@ -1266,6 +1679,7 @@ paths:
       operationId: getDealById
       tags:
         - Deals
+      security: []
       parameters:
         - name: dealId
           in: path
@@ -1304,6 +1718,7 @@ paths:
       operationId: updateDealStatus
       tags:
         - Deals
+      security: []
       parameters:
         - name: dealId
           in: path
@@ -1350,6 +1765,7 @@ paths:
       operationId: updateScheduleItemStatus
       tags:
         - Deals
+      security: []
       parameters:
         - name: dealId
           in: path
@@ -1391,6 +1807,15 @@ paths:
           $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
+        '409':
+          description: |
+            Marking this period paid would push accumulated rent-to-own equity
+            over the property value (mirrors the rent_to_own contract's
+            `EquityOverflow` guard — code `EQUITY_OVERFLOW`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         default:
@@ -1405,9 +1830,16 @@ paths:
 
         Only receipts with status `sent` (confirmed on-chain) are counted.
         USDC is the canonical accounting unit.
+
+        `equityAccumulatedUsdc`/`equityPercentageBps` reflect rent_to_own
+        equity that has actually landed on-chain (only `sent`
+        `RENT_TO_OWN_EQUITY_PAYMENT` outbox items are counted) — this is
+        contract-confirmed state, distinct from `periodsPaid`, which is a raw
+        receipt count.
       operationId: getDealProgress
       tags:
         - Deals
+      security: []
       parameters:
         - name: dealId
           in: path
@@ -1443,6 +1875,10 @@ paths:
                   lastPaymentTxId: "a3f2c1d4e5b6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2"
                   lastPaymentExternalRefSource: stripe
                   lastPaymentExternalRef: pi_3OZxyz123456
+                  equityAccumulatedUsdc: "80.650000"
+                  equityCapUsdc: "600.000000"
+                  equityPercentageBps: 1344
+                  equityPaymentsConfirmed: 2
         '404':
           description: Deal not found
           content:
@@ -1453,6 +1889,236 @@ paths:
                 error:
                   code: NOT_FOUND
                   message: Deal with ID '550e8400-e29b-41d4-a716-446655440000' not found
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tenant/payments/disputes:
+    post:
+      summary: File a payment dispute
+      description: |
+        Files a payment dispute against a deal. Asynchronously (via the
+        outbox/worker pattern — never synchronously in this request) enqueues
+        an on-chain `challenge_rent_release` call against deal_escrow for the
+        given `dealId`, halting any pending rent release within its challenge
+        window. If deal_escrow has no pending release for this deal (or the
+        challenge window already closed), the on-chain call is rejected and
+        the dispute is marked `rejected` with that reason — it is never left
+        silently "pending" with no on-chain effect.
+      operationId: createPaymentDispute
+      tags:
+        - Disputes
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentDisputeCreateRequest'
+      responses:
+        '201':
+          description: Dispute filed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    required:
+                      - dispute
+                    properties:
+                      dispute:
+                        $ref: '#/components/schemas/PaymentDispute'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List the authenticated tenant's own disputes
+      description: Returns every dispute filed by the authenticated caller, most recent first.
+      operationId: listMyPaymentDisputes
+      tags:
+        - Disputes
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The caller's disputes
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    required:
+                      - disputes
+                    properties:
+                      disputes:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PaymentDispute'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/disputes:
+    get:
+      summary: List payment disputes (admin)
+      description: Returns a paginated, filterable list of payment disputes for admin review.
+      operationId: listPaymentDisputesAdmin
+      tags:
+        - Disputes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/PaymentDisputeStatus'
+        - name: userId
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Paginated dispute list
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - disputes
+                  - total
+                  - page
+                  - pageSize
+                  - totalPages
+                properties:
+                  disputes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PaymentDispute'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  pageSize:
+                    type: integer
+                  totalPages:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller lacks the disputes:view permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/disputes/{disputeId}/resolve:
+    post:
+      summary: Resolve a payment dispute (admin)
+      description: |
+        Resolves or rejects a payment dispute and, asynchronously via the
+        outbox/worker pattern, enqueues a matching on-chain
+        `resolve_rent_dispute` call against deal_escrow (skipped if the
+        dispute has no associated dealId).
+
+        Status → SettlementOutcome mapping:
+        - `resolved` (the tenant's dispute is upheld) → `RefundToDepositor`
+          (the pending rent release is refunded to the tenant, not released
+          to the landlord).
+        - `rejected` (the dispute is denied) → `ReleaseToRecipient` (the
+          originally requested release proceeds to its recipient, e.g. the
+          landlord).
+      operationId: resolvePaymentDisputeAdmin
+      tags:
+        - Disputes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: disputeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [resolved, rejected]
+                resolution:
+                  type: string
+      responses:
+        '200':
+          description: Dispute resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller lacks the disputes:resolve permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/Error'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         default:
@@ -1472,6 +2138,10 @@ paths:
       operationId: markRewardPaid
       tags:
         - Admin
+      # NOTE: this handler calls neither requireAdminSecret nor authenticateToken — it is
+      # unauthenticated in code today despite being an admin payout action (see PR
+      # description — code/spec mismatch finding). security:[] reflects current code.
+      security: []
       parameters:
         - name: rewardId
           in: path
@@ -1603,6 +2273,10 @@ paths:
       operationId: adminListWhistleblowerListings
       tags:
         - Admin
+      # NOTE: this handler calls neither requireAdminSecret nor authenticateToken — it is
+      # unauthenticated in code today (see PR description — code/spec mismatch finding).
+      # security:[] reflects current code.
+      security: []
       parameters:
         - name: status
           in: query
@@ -1658,6 +2332,10 @@ paths:
       operationId: approveWhistleblowerListing
       tags:
         - Admin
+      # NOTE: this handler calls neither requireAdminSecret nor authenticateToken — it is
+      # unauthenticated in code today (see PR description — code/spec mismatch finding).
+      # security:[] reflects current code.
+      security: []
       parameters:
         - name: id
           in: path
@@ -1730,6 +2408,10 @@ paths:
       operationId: rejectWhistleblowerListing
       tags:
         - Admin
+      # NOTE: this handler calls neither requireAdminSecret nor authenticateToken — it is
+      # unauthenticated in code today (see PR description — code/spec mismatch finding).
+      # security:[] reflects current code.
+      security: []
       parameters:
         - name: id
           in: path
@@ -1804,6 +2486,446 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/admin/fraud/slashing/submit-evidence:
+    post:
+      summary: Submit evidence to slashing module
+      description: Queues a submit_evidence operation to the slashing module contract via the outbox pattern.
+      operationId: submitSlashingEvidence
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - submitter
+                - commitment
+                - actor
+                - offence
+              properties:
+                submitter:
+                  type: string
+                  description: Stellar address of the evidence submitter
+                  example: "GABC..."
+                commitment:
+                  type: string
+                  description: Commitment hash (hex string)
+                  example: "0x123abc..."
+                actor:
+                  type: string
+                  description: Stellar address of the actor being accused
+                  example: "GXYZ..."
+                offence:
+                  type: string
+                  description: Type of offence
+                  example: "double_signing"
+      responses:
+        '201':
+          description: Evidence submission queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/slashing/reveal-evidence:
+    post:
+      summary: Reveal evidence in slashing module
+      description: Queues a reveal_evidence operation to the slashing module contract via the outbox pattern.
+      operationId: revealSlashingEvidence
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - submitter
+                - slashId
+                - evidence
+                - salt
+              properties:
+                submitter:
+                  type: string
+                  description: Stellar address of the evidence submitter
+                  example: "GABC..."
+                slashId:
+                  type: integer
+                  description: Slash ID from the original submission
+                  example: 1
+                evidence:
+                  type: string
+                  description: Evidence data (hex string)
+                  example: "0x456def..."
+                salt:
+                  type: string
+                  description: Salt used for commitment (hex string)
+                  example: "0x789ghi..."
+      responses:
+        '201':
+          description: Evidence reveal queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/slashing/propose-slash:
+    post:
+      summary: Propose a slash in slashing module
+      description: Queues a propose_slash operation to the slashing module contract via the outbox pattern.
+      operationId: proposeSlash
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - submitter
+                - actor
+                - penaltyBps
+              properties:
+                submitter:
+                  type: string
+                  description: Stellar address of the submitter
+                  example: "GABC..."
+                actor:
+                  type: string
+                  description: Stellar address of the actor to be slashed
+                  example: "GXYZ..."
+                penaltyBps:
+                  type: integer
+                  description: Penalty in basis points (0-10000, where 10000 = 100%)
+                  minimum: 0
+                  maximum: 10000
+                  example: 5000
+      responses:
+        '201':
+          description: Slash proposal queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/slashing/finalize-slash:
+    post:
+      summary: Finalize a slash in slashing module
+      description: Queues a finalize_slash operation to the slashing module contract via the outbox pattern.
+      operationId: finalizeSlash
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - caller
+                - slashId
+              properties:
+                caller:
+                  type: string
+                  description: Stellar address of the caller
+                  example: "GABC..."
+                slashId:
+                  type: integer
+                  description: Slash ID to finalize
+                  example: 1
+      responses:
+        '201':
+          description: Slash finalization queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/slashing/cancel-slash:
+    post:
+      summary: Cancel a slash in slashing module
+      description: Queues a cancel_slash operation to the slashing module contract via the outbox pattern.
+      operationId: cancelSlash
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - admin
+                - slashId
+              properties:
+                admin:
+                  type: string
+                  description: Stellar address of the admin
+                  example: "GABC..."
+                slashId:
+                  type: integer
+                  description: Slash ID to cancel
+                  example: 1
+      responses:
+        '201':
+          description: Slash cancellation queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/bond/deposit:
+    post:
+      summary: Deposit bond to bond collateral contract
+      description: Queues a deposit_bond operation to the bond collateral contract via the outbox pattern.
+      operationId: depositBond
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - inspector
+                - amount
+              properties:
+                inspector:
+                  type: string
+                  description: Stellar address of the inspector
+                  example: "GABC..."
+                amount:
+                  type: string
+                  description: Bond amount (as string to preserve precision)
+                  example: "1000000"
+      responses:
+        '201':
+          description: Bond deposit queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/fraud/bond/withdraw:
+    post:
+      summary: Withdraw bond from bond collateral contract
+      description: Queues a withdraw_bond operation to the bond collateral contract via the outbox pattern.
+      operationId: withdrawBond
+      tags:
+        - Admin
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - inspector
+                - amount
+              properties:
+                inspector:
+                  type: string
+                  description: Stellar address of the inspector
+                  example: "GABC..."
+                amount:
+                  type: string
+                  description: Bond amount to withdraw (as string to preserve precision)
+                  example: "1000000"
+      responses:
+        '201':
+          description: Bond withdrawal queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - outboxId
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  outboxId:
+                    type: string
+                    description: Outbox item ID for tracking
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Invalid admin secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Invalid admin secret
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/staking/stake:
     post:
       summary: Stake USDC tokens
@@ -1815,6 +2937,9 @@ paths:
       operationId: stakeTokens
       tags:
         - Staking
+      # NOTE: createStakingRouter() applies no auth middleware to this route today (see PR
+      # description — code/spec mismatch finding). security:[] reflects current code.
+      security: []
       requestBody:
         required: true
         content:
@@ -1870,6 +2995,9 @@ paths:
       operationId: unstakeTokens
       tags:
         - Staking
+      # NOTE: createStakingRouter() applies no auth middleware to this route today (see PR
+      # description — code/spec mismatch finding). security:[] reflects current code.
+      security: []
       requestBody:
         required: true
         content:
@@ -1925,6 +3053,9 @@ paths:
       operationId: claimStakingRewards
       tags:
         - Staking
+      # NOTE: createStakingRouter() applies no auth middleware to this route today (see PR
+      # description — code/spec mismatch finding). security:[] reflects current code.
+      security: []
       requestBody:
         required: true
         content:
@@ -1975,6 +3106,8 @@ paths:
       operationId: getStakingPosition
       tags:
         - Staking
+      security:
+        - bearerAuth: []
       responses:
         '200':
           description: Staking position retrieved successfully
@@ -1987,6 +3120,276 @@ paths:
                 position:
                   staked: "1000.000000"
                   claimable: "50.250000"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/mvp-position:
+    get:
+      summary: Get MVP staking utilization position
+      description: Read the additive MVP pool's total, used, unused, and claimable stake.
+      operationId: getMvpStakingPosition
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: MVP staking position retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MvpStakingPositionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/position:
+    get:
+      summary: Get delegated-staking position
+      description: >-
+        The caller's position inside the stake_delegation contract: the balance
+        that contract holds for them, how much of it is currently delegated, how
+        much is free, and the per-delegatee breakdown. This is a separate ledger
+        from staking_pool — it is never a slice of /api/staking/position.
+      operationId: getDelegationPosition
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Delegated-staking position retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationPositionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/delegatee-earnings:
+    get:
+      summary: Get delegatee earnings
+      description: >-
+        Net rewards claimable by the caller acting as a delegatee (gross minus
+        their commission), plus the accrued commission balance itself.
+      operationId: getDelegateeEarnings
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Delegatee earnings retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegateeEarningsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/delegate:
+    post:
+      summary: Delegate stake to a delegatee
+      description: Routes part of the caller's free stake_delegation balance to a delegatee.
+      operationId: delegateStake
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DelegateRequest'
+      responses:
+        '200':
+          description: Stake delegated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/undelegate/request:
+    post:
+      summary: Request undelegation
+      description: >-
+        Opens the contract's undelegation cooldown. The stake stays delegated
+        until the matching complete call succeeds.
+      operationId: requestUndelegate
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DelegateRequest'
+      responses:
+        '202':
+          description: Undelegation requested; cooldown started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/undelegate/complete:
+    post:
+      summary: Complete a pending undelegation
+      description: >-
+        Settles a pending undelegation. The contract rejects this until its
+        configured cooldown (7 days by default) has elapsed.
+      operationId: completeUndelegate
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delegatee]
+              properties:
+                delegatee:
+                  type: string
+                  description: Delegatee whose pending undelegation should be settled
+                  example: GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H
+      responses:
+        '200':
+          description: Undelegation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/commission:
+    post:
+      summary: Set the caller's delegatee commission
+      description: Sets the commission, in basis points, charged on stake delegated to the caller.
+      operationId: setDelegateeCommission
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rateBps]
+              properties:
+                rateBps:
+                  type: integer
+                  minimum: 0
+                  maximum: 10000
+                  description: Commission in basis points
+                  example: 1000
+      responses:
+        '200':
+          description: Commission updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, txHash, rateBps]
+                properties:
+                  success: { type: boolean, example: true }
+                  txHash: { type: string }
+                  rateBps: { type: integer, example: 1000 }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/claim-rewards:
+    post:
+      summary: Claim delegatee rewards
+      description: Claims the caller's net delegatee rewards (gross minus their commission).
+      operationId: claimDelegateeRewards
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Delegatee rewards claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/staking/delegation/claim-commission:
+    post:
+      summary: Claim delegatee commission
+      description: Claims the caller's accrued commission balance.
+      operationId: claimDelegateeCommission
+      tags:
+        - Staking
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Commission claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationTxResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
 
@@ -2091,6 +3494,10 @@ paths:
       operationId: initiateStakingDeposit
       tags:
         - Staking
+      # NOTE: identity here comes from the trusted x-user-id header (see description), not a
+      # bearer token — the route has no authenticateToken/bearerAuth check (see PR
+      # description — code/spec mismatch finding). security:[] reflects current code.
+      security: []
       parameters:
         - in: header
           name: x-user-id
@@ -2170,6 +3577,8 @@ paths:
       operationId: paymentsWebhook
       tags:
         - Webhooks
+      security:
+        - webhookSignature: []
       parameters:
         - name: rail
           in: path
@@ -2218,7 +3627,253 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/governance/proposals:
+    get:
+      summary: List governance proposals
+      description: |
+        Lists all stake-weighted governance proposals (contracts/governance), from id 1
+        through the on-chain proposal count. Distinct from the timelock admin queue
+        (/api/v1/admin-timelock), which is an unrelated contract.
+      operationId: listGovernanceProposals
+      tags:
+        - Governance
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Proposals fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceProposalListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/governance/proposals/{id}:
+    get:
+      summary: Get a single governance proposal
+      operationId: getGovernanceProposal
+      tags:
+        - Governance
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/GovernanceProposalId'
+      responses:
+        '200':
+          description: Proposal fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceProposalResponse'
+        '404':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/governance/proposals/prepare:
+    post:
+      summary: Prepare an unsigned create_proposal transaction
+      description: |
+        Builds an unsigned Soroban transaction envelope for `create_proposal`, sourced
+        from the caller's linked Stellar address. The contract calls `proposer.require_auth()`,
+        so this backend cannot sign on the caller's behalf — the connected wallet must sign
+        the returned XDR and post it to `/api/v1/governance/proposals/submit`.
+
+        Rejects with 403 if the caller's staked balance is below MIN_STAKE_TO_PROPOSE. This is
+        an informational pre-check against the real staking_pool balance; the authoritative
+        gate remains the governance contract's own on-chain check.
+      operationId: prepareGovernanceProposal
+      tags:
+        - Governance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrepareGovernanceProposalRequest'
+      responses:
+        '200':
+          description: Unsigned transaction ready for the caller's wallet to sign
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnsignedTransactionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Staked balance is below MIN_STAKE_TO_PROPOSE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/governance/proposals/submit:
+    post:
+      summary: Submit a wallet-signed create_proposal transaction
+      operationId: submitGovernanceProposal
+      tags:
+        - Governance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitSignedTransactionRequest'
+      responses:
+        '200':
+          description: Transaction broadcast and confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceTxResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/governance/proposals/{id}/vote/prepare:
+    post:
+      summary: Prepare an unsigned vote transaction
+      description: |
+        Builds an unsigned `vote` transaction sourced from the caller's linked Stellar
+        address. Vote weight is the voter's stake, snapshotted on-chain at the moment of
+        their first vote on this proposal — this backend performs no weight calculation.
+      operationId: prepareGovernanceVote
+      tags:
+        - Governance
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/GovernanceProposalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GovernanceVoteRequest'
+      responses:
+        '200':
+          description: Unsigned transaction ready for the caller's wallet to sign
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnsignedTransactionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/governance/proposals/{id}/vote/submit:
+    post:
+      summary: Submit a wallet-signed vote transaction
+      operationId: submitGovernanceVote
+      tags:
+        - Governance
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/GovernanceProposalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitSignedTransactionRequest'
+      responses:
+        '200':
+          description: Vote transaction broadcast and confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceTxResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/governance/proposals/{id}/finalize:
+    post:
+      summary: Finalize a proposal after its voting period ends
+      description: |
+        `finalize_proposal` is permissionless on-chain (no require_auth) — any authenticated
+        caller may trigger it once the voting period has elapsed; the backend's operational
+        key only pays the fee.
+      operationId: finalizeGovernanceProposal
+      tags:
+        - Governance
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/GovernanceProposalId'
+      responses:
+        '200':
+          description: Proposal finalized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceTxResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/governance/proposals/{id}/execute:
+    post:
+      summary: Execute a passed proposal after its timelock elapses
+      description: |
+        `execute_proposal` is permissionless on-chain and has no direct on-chain effect
+        beyond flipping the proposal's status and emitting `proposal_executed` — applying
+        `proposedValue` to whatever `paramKey` represents is an off-chain/other-contract
+        action driven by that event.
+      operationId: executeGovernanceProposal
+      tags:
+        - Governance
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/GovernanceProposalId'
+      responses:
+        '200':
+          description: Proposal executed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceTxResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
+  parameters:
+    GovernanceProposalId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Governance proposal id (1-based, contracts/governance/src/lib.rs:188)
+
   schemas:
     User:
       type: object
@@ -3228,6 +4883,67 @@ components:
           type: string
           description: Optional FX rate provider
           example: coinbase
+
+    EpochInfo:
+      type: object
+      description: Information about a specific epoch in the epoch rewards contract
+      required:
+        - epoch_number
+        - start_ts
+        - duration_secs
+        - end_ts
+        - seal_ts
+        - sealed
+        - total_rewards
+        - carried_forward
+        - reward_index_at_seal
+        - dust
+        - total_claimable_at_seal
+      properties:
+        epoch_number:
+          type: integer
+          description: The epoch number
+          example: 1
+        start_ts:
+          type: integer
+          description: Unix timestamp when the epoch started
+          example: 1000
+        duration_secs:
+          type: integer
+          description: Duration of the epoch in seconds
+          example: 86400
+        end_ts:
+          type: integer
+          description: Unix timestamp when the epoch ends
+          example: 87400
+        seal_ts:
+          type: integer
+          description: Unix timestamp when the epoch was sealed
+          example: 87400
+        sealed:
+          type: boolean
+          description: Whether the epoch has been sealed
+          example: true
+        total_rewards:
+          type: string
+          description: Total rewards added to the epoch as string
+          example: "10000"
+        carried_forward:
+          type: string
+          description: Amount carried forward from previous epoch as string
+          example: "0"
+        reward_index_at_seal:
+          type: string
+          description: Reward index at the time of sealing as string
+          example: "1000"
+        dust:
+          type: string
+          description: Dust amount as string
+          example: "0"
+        total_claimable_at_seal:
+          type: string
+          description: Total claimable amount at seal as string
+          example: "5000"
     EarningsResponse:
       type: object
       required:
@@ -3338,6 +5054,10 @@ components:
         - periodsPaid
         - remainingPeriods
         - nextDueDate
+        - equityAccumulatedUsdc
+        - equityCapUsdc
+        - equityPercentageBps
+        - equityPaymentsConfirmed
       properties:
         totalPaidUsdc:
           type: string
@@ -3369,6 +5089,122 @@ components:
           type: string
           description: Reference part of the canonical external reference (e.g. payment intent ID)
           example: pi_3OZxyz123456
+        equityAccumulatedUsdc:
+          type: string
+          description: |
+            Rent-to-own equity confirmed on-chain — sum of `sent`
+            RENT_TO_OWN_EQUITY_PAYMENT receipts' equityAmountUsdc (decimal
+            string, 6 decimal places). Reflects record_equity_payment calls
+            that actually landed on the rent_to_own contract.
+          example: "80.650000"
+        equityCapUsdc:
+          type: string
+          description: rent_to_own's property_value_usdc equity cap for this deal (decimal string, 6 decimal places)
+          example: "600.000000"
+        equityPercentageBps:
+          type: integer
+          description: equityAccumulatedUsdc as basis points of equityCapUsdc (0-10000), mirroring the contract's get_equity_percentage
+          example: 1344
+        equityPaymentsConfirmed:
+          type: integer
+          description: Number of RENT_TO_OWN_EQUITY_PAYMENT receipts confirmed on-chain
+          example: 2
+
+    PaymentDisputeReason:
+      type: string
+      enum:
+        - amount_discrepancy
+        - duplicate_charge
+        - service_not_received
+        - early_termination
+        - property_issue
+        - other
+
+    PaymentDisputeStatus:
+      type: string
+      enum:
+        - pending
+        - under_review
+        - resolved
+        - rejected
+
+    PaymentDisputeCreateRequest:
+      type: object
+      required:
+        - paymentId
+        - dealId
+        - reason
+        - description
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        dealId:
+          type: string
+          description: The deal_escrow deal ID this dispute is challenging a pending rent release for.
+          example: 550e8400-e29b-41d4-a716-446655440000
+        reason:
+          $ref: '#/components/schemas/PaymentDisputeReason'
+        description:
+          type: string
+          minLength: 10
+          maxLength: 1000
+        evidenceKeys:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+
+    PaymentDispute:
+      type: object
+      required:
+        - id
+        - userId
+        - paymentId
+        - dealId
+        - reason
+        - description
+        - evidenceKeys
+        - status
+        - resolution
+        - resolvedBy
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        paymentId:
+          type: string
+          format: uuid
+        dealId:
+          type: string
+          nullable: true
+          description: Null for disputes filed before deal_id was captured.
+        reason:
+          $ref: '#/components/schemas/PaymentDisputeReason'
+        description:
+          type: string
+        evidenceKeys:
+          type: array
+          items:
+            type: string
+        status:
+          $ref: '#/components/schemas/PaymentDisputeStatus'
+        resolution:
+          type: string
+          nullable: true
+        resolvedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     Error:
       type: object
@@ -3520,6 +5356,258 @@ components:
               pattern: '^\d+(\.\d{1,6})?$'
               example: "50.250000"
 
+    MvpStakingPositionResponse:
+      type: object
+      required: [success, position]
+      properties:
+        success:
+          type: boolean
+          example: true
+        position:
+          type: object
+          required: [staked, used, unused, claimable]
+          properties:
+            staked: { type: string, example: "1000.000000" }
+            used: { type: string, description: Stake locked for an authorized protocol use, example: "250.000000" }
+            unused: { type: string, description: Stake still available to unstake, example: "750.000000" }
+            claimable: { type: string, example: "50.250000" }
+
+    DelegationPositionResponse:
+      type: object
+      required: [success, position]
+      properties:
+        success:
+          type: boolean
+          example: true
+        position:
+          type: object
+          required: [staked, delegated, free, currentEpoch, delegations]
+          properties:
+            staked:
+              type: string
+              description: Balance held by stake_delegation for the caller (NOT the staking_pool position)
+              example: "1000.000000"
+            delegated: { type: string, description: Portion currently routed to delegatees, example: "250.000000" }
+            free: { type: string, description: Portion still available to delegate or unstake, example: "750.000000" }
+            currentEpoch: { type: integer, description: stake_delegation's current epoch number, example: 4 }
+            delegations:
+              type: array
+              items:
+                type: object
+                required: [delegatee, amountUsdc, activatedEpoch]
+                properties:
+                  delegatee: { type: string, example: GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H }
+                  amountUsdc: { type: string, example: "250.000000" }
+                  activatedEpoch: { type: integer, example: 2 }
+
+    DelegateeEarningsResponse:
+      type: object
+      required: [success, delegatee, earnings]
+      properties:
+        success: { type: boolean, example: true }
+        delegatee: { type: string, example: GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H }
+        earnings:
+          type: object
+          required: [claimable, commissionClaimable]
+          properties:
+            claimable: { type: string, description: Net rewards after the commission split, example: "45.000000" }
+            commissionClaimable: { type: string, description: Accrued commission balance, example: "5.000000" }
+
+    DelegateRequest:
+      type: object
+      required: [delegatee, amountUsdc]
+      properties:
+        delegatee:
+          type: string
+          pattern: '^G[A-Z2-7]{55}$'
+          description: Stellar address of the delegatee
+          example: GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H
+        amountUsdc:
+          type: string
+          pattern: '^\d+(\.\d{1,6})?$'
+          description: Amount in USDC (canonical unit)
+          example: "250.000000"
+
+    DelegationTxResponse:
+      type: object
+      required: [success, txHash]
+      properties:
+        success: { type: boolean, example: true }
+        txHash: { type: string, description: Stellar transaction hash for the submitted contract call }
+        message: { type: string, example: Stake delegated }
+        delegation:
+          type: object
+          properties:
+            delegatee: { type: string }
+            amountUsdc: { type: string }
+
+    GovernanceProposalStatus:
+      type: string
+      description: Mirrors ProposalStatus in contracts/governance/src/lib.rs.
+      enum:
+        - Active
+        - Passed
+        - Rejected
+        - Executed
+        - Cancelled
+
+    GovernanceProposal:
+      type: object
+      description: |
+        Mirrors the Proposal struct in contracts/governance/src/lib.rs. i128 fields are
+        decimal strings so values beyond Number.MAX_SAFE_INTEGER keep full precision.
+      required:
+        - id
+        - proposer
+        - paramKey
+        - currentValue
+        - proposedValue
+        - votesFor
+        - votesAgainst
+        - status
+        - createdAt
+        - votingEndsAt
+        - snapshottedTotalStaked
+      properties:
+        id:
+          type: integer
+          example: 1
+        proposer:
+          type: string
+          description: Stellar address of the proposer
+          example: "GABCDEXAMPLE0000000000000000000000000000000000000000000000AB"
+        paramKey:
+          type: string
+          description: Arbitrary Soroban symbol chosen by the proposer; opaque to the contract and this API.
+          example: "min_stake"
+        currentValue:
+          type: string
+          description: i128 as a decimal string
+          example: "100"
+        proposedValue:
+          type: string
+          description: i128 as a decimal string
+          example: "200"
+        votesFor:
+          type: string
+          example: "600000"
+        votesAgainst:
+          type: string
+          example: "200000"
+        status:
+          $ref: '#/components/schemas/GovernanceProposalStatus'
+        createdAt:
+          type: integer
+          description: Ledger timestamp (unix seconds)
+          example: 1735689600
+        votingEndsAt:
+          type: integer
+          example: 1736294400
+        snapshottedTotalStaked:
+          type: string
+          description: Total staked snapshotted at proposal creation, used for quorum
+          example: "1000000"
+
+    GovernanceProposalListResponse:
+      type: object
+      required:
+        - success
+        - proposals
+        - count
+      properties:
+        success:
+          type: boolean
+          example: true
+        proposals:
+          type: array
+          items:
+            $ref: '#/components/schemas/GovernanceProposal'
+        count:
+          type: integer
+          example: 1
+
+    GovernanceProposalResponse:
+      type: object
+      required:
+        - success
+        - proposal
+      properties:
+        success:
+          type: boolean
+          example: true
+        proposal:
+          $ref: '#/components/schemas/GovernanceProposal'
+
+    PrepareGovernanceProposalRequest:
+      type: object
+      required:
+        - paramKey
+        - currentValue
+        - proposedValue
+      properties:
+        paramKey:
+          type: string
+          pattern: '^[A-Za-z0-9_]{1,32}$'
+          description: Soroban symbol (max 32 chars of [A-Za-z0-9_])
+          example: "min_stake"
+        currentValue:
+          oneOf:
+            - type: string
+            - type: integer
+          example: "100"
+        proposedValue:
+          oneOf:
+            - type: string
+            - type: integer
+          example: "200"
+
+    GovernanceVoteRequest:
+      type: object
+      required:
+        - support
+      properties:
+        support:
+          type: boolean
+          description: true = vote for, false = vote against
+          example: true
+
+    SubmitSignedTransactionRequest:
+      type: object
+      required:
+        - signedXdr
+      properties:
+        signedXdr:
+          type: string
+          description: Base64 transaction envelope signed by the caller's connected wallet
+      example:
+        signedXdr: "AAAAAgAAAAA..."
+
+    UnsignedTransactionResponse:
+      type: object
+      required:
+        - success
+        - xdr
+      properties:
+        success:
+          type: boolean
+          example: true
+        xdr:
+          type: string
+          description: Base64 unsigned transaction envelope for the caller's wallet to sign
+
+    GovernanceTxResponse:
+      type: object
+      required:
+        - success
+        - txHash
+      properties:
+        success:
+          type: boolean
+          example: true
+        txHash:
+          type: string
+          example: "a3f2c1d4e5b6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2"
+
   responses:
     Error:
       description: Unexpected error
@@ -3570,6 +5658,34 @@ components:
       type: http
       scheme: bearer
       bearerFormat: token
+      description: >-
+        Ordinary authenticated-session bearer token (authenticateToken middleware only —
+        no elevated role/permission required).
+    bearerAdminAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+      description: >-
+        Same bearer token as bearerAuth, but the route additionally requires the caller's
+        session to carry an admin-tier RBAC permission (requirePermission(resource, action)
+        in middleware/rbac.ts, e.g. payouts:trigger) or an explicit admin/super_admin role
+        check. Kept as a distinct scheme name so admin-gated operations are visibly
+        distinguishable from ordinary authenticated ones in this document.
+    adminSecret:
+      type: apiKey
+      in: header
+      name: x-admin-secret
+      description: >-
+        Shared operator secret checked against MANUAL_ADMIN_SECRET. Used by the
+        job-scheduler admin routes, which are reachable without a user session.
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
+      description: >-
+        Provider-specific HMAC signature header verified server-side instead of a bearer
+        token (e.g. x-paystack-signature for Paystack, verif-hash for Flutterwave). The
+        header name varies by payment rail; see the payments webhook handler.
 
 tags:
   - name: Health
@@ -3592,3 +5708,5 @@ tags:
     description: Staking operations (stake, unstake, claim rewards)
   - name: Support
     description: Public support/contact message intake
+  - name: Governance
+    description: Stake-weighted parameter governance proposals and voting (contracts/governance)

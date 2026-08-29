@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import RentToOwnCalculator from "@/components/calculator/RentToOwnCalculator";
+import { buildPageMetadata } from "@/lib/seo";
 
-export const metadata = {
-  title: "Rent-to-Own Calculator | Shelterflex",
+export const metadata = buildPageMetadata({
+  title: "Rent-to-Own Calculator",
   description:
     "Explore how the Shelterflex rent-to-own programme could help you build equity toward owning your home.",
-};
+  path: "/calculator/rent-to-own",
+});
 
 export default function RentToOwnPage() {
   return (

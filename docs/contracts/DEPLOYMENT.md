@@ -1,6 +1,12 @@
 # Contracts Deployment & IDs (Soroban CLI)
 
-This runbook is the single source of truth for deploying the core contracts on Soroban testnet and wiring the resulting IDs into backend environment variables.
+This document is the command reference for deploying the core contracts on Soroban testnet and wiring the resulting IDs into backend environment variables.
+
+> **Performing a deployment or an upgrade?** Start with
+> [`RUNBOOK.md`](./RUNBOOK.md) — the ordered end-to-end procedure covering WASM
+> verification, the multisig handover, the timelock, rollback limits and the
+> testnet/mainnet gate. This file gives you the commands; the runbook gives you
+> the order and the checks.
 
 It covers:
 

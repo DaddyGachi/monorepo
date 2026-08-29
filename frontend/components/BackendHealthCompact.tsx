@@ -38,7 +38,7 @@ export default function BackendHealthCompact() {
   });
 
   useEffect(() => {
-    if (!process.env.NEXT_PUBLIC_BACKEND_URL) {
+    if (!process.env.NEXT_PUBLIC_BACKEND_URL || !shouldShow || !isVisible) {
       return;
     }
 
@@ -49,7 +49,7 @@ export default function BackendHealthCompact() {
         console.error("Backend health check failed:", err);
         setState({ type: "error", message: errorMessage });
       });
-  }, []);
+  }, [isVisible, shouldShow]);
 
   const getStatusIcon = () => {
     if (state.type === "loading") {

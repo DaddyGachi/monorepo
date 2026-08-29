@@ -26,7 +26,10 @@ class PostgresCreditBureauReportStore implements ICreditBureauReportStore {
   async create(
     input: CreateCreditBureauReportInput,
   ): Promise<CreditBureauReportRecord> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error("Database pool is not available (DATABASE_URL/pg not configured)");
+    }
     const id = randomUUID();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days TTL
@@ -56,7 +59,10 @@ class PostgresCreditBureauReportStore implements ICreditBureauReportStore {
   async findLatestByTenantId(
     tenantId: string,
   ): Promise<CreditBureauReportRecord | null> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error("Database pool is not available (DATABASE_URL/pg not configured)");
+    }
     const now = new Date();
 
     const query = `
@@ -72,7 +78,10 @@ class PostgresCreditBureauReportStore implements ICreditBureauReportStore {
   }
 
   async findById(id: string): Promise<CreditBureauReportRecord | null> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error("Database pool is not available (DATABASE_URL/pg not configured)");
+    }
 
     const query = `
       SELECT id, tenant_id, bvn, nin, report, cached_at, expires_at, created_at, updated_at
@@ -85,7 +94,10 @@ class PostgresCreditBureauReportStore implements ICreditBureauReportStore {
   }
 
   async deleteExpired(): Promise<number> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error("Database pool is not available (DATABASE_URL/pg not configured)");
+    }
     const now = new Date();
 
     const query = `

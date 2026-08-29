@@ -1704,7 +1704,7 @@ mod tests {
     #[test]
     fn pause_blocks_mutating_calls() {
         let env = Env::default();
-        let (admin, submitter, client) = setup(&env);
+        let (admin, _submitter, client) = setup(&env);
         let actor = Address::generate(&env);
 
         seed_balance(&client, &admin, &actor, 10_000);
@@ -1914,7 +1914,7 @@ mod tests {
     #[test]
     fn propose_slash_tiered_bps() {
         let env = Env::default();
-        let (admin, submitter, client) = setup(&env);
+        let (admin, _submitter, client) = setup(&env);
         let actor = Address::generate(&env);
 
         seed_balance(&client, &admin, &actor, 10_000);
@@ -1933,7 +1933,7 @@ mod tests {
     #[test]
     fn propose_slash_bounded_by_max_bps() {
         let env = Env::default();
-        let (admin, submitter, client) = setup(&env);
+        let (admin, _submitter, client) = setup(&env);
         let actor = Address::generate(&env);
 
         seed_balance(&client, &admin, &actor, 10_000);

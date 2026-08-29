@@ -33,7 +33,7 @@ import {
   Unlock,
 } from "lucide-react";
 
-type UserRole = "admin" | "landlord" | "tenant" | "agent";
+type UserRole = "admin" | "landlord" | "tenant";
 type UserStatus = "active" | "suspended" | "pending";
 
 interface User {
@@ -80,15 +80,6 @@ const mockUsers: User[] = [
     lastActive: "2024-04-27",
   },
   {
-    id: "u3",
-    name: "Carol White",
-    email: "carol@example.com",
-    role: "agent",
-    status: "active",
-    joinedDate: "2024-02-10",
-    lastActive: "2024-04-28",
-  },
-  {
     id: "u4",
     name: "David Brown",
     email: "david@example.com",
@@ -111,7 +102,6 @@ const mockUsers: User[] = [
 const ROLES: { value: UserRole; label: string }[] = [
   { value: "tenant", label: "Tenant" },
   { value: "landlord", label: "Landlord" },
-  { value: "agent", label: "Agent" },
   { value: "admin", label: "Admin" },
 ];
 
@@ -319,25 +309,25 @@ export default function AdminUsersPage() {
         {/* Users Table */}
         <div className="border-3 border-foreground bg-card shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full" aria-label="User accounts">
               <thead className="border-b-3 border-foreground bg-muted">
                 <tr>
-                  <th className="px-4 py-3 text-left font-mono text-sm font-bold">
+                  <th scope="col" className="px-4 py-3 text-left font-mono text-sm font-bold">
                     Name
                   </th>
-                  <th className="px-4 py-3 text-left font-mono text-sm font-bold">
+                  <th scope="col" className="px-4 py-3 text-left font-mono text-sm font-bold">
                     Email
                   </th>
-                  <th className="px-4 py-3 text-left font-mono text-sm font-bold">
+                  <th scope="col" className="px-4 py-3 text-left font-mono text-sm font-bold">
                     Role
                   </th>
-                  <th className="px-4 py-3 text-left font-mono text-sm font-bold">
+                  <th scope="col" className="px-4 py-3 text-left font-mono text-sm font-bold">
                     Status
                   </th>
-                  <th className="px-4 py-3 text-left font-mono text-sm font-bold">
+                  <th scope="col" className="px-4 py-3 text-left font-mono text-sm font-bold">
                     Joined
                   </th>
-                  <th className="px-4 py-3 text-right font-mono text-sm font-bold">
+                  <th scope="col" className="px-4 py-3 text-right font-mono text-sm font-bold">
                     Actions
                   </th>
                 </tr>
@@ -384,8 +374,9 @@ export default function AdminUsersPage() {
                             variant="ghost"
                             onClick={() => handleRoleChange(user.id)}
                             className="h-6 w-6 p-0"
+                            aria-label={`Change role for ${user.name}`}
                           >
-                            <Edit2 className="h-3 w-3" />
+                            <Edit2 className="h-3 w-3" aria-hidden="true" />
                           </Button>
                           <Button
                             size="sm"
@@ -394,11 +385,16 @@ export default function AdminUsersPage() {
                               handleSuspension(user.id, user.status !== "suspended")
                             }
                             className="h-6 w-6 p-0"
+                            aria-label={
+                              user.status === "suspended"
+                                ? `Unsuspend ${user.name}`
+                                : `Suspend ${user.name}`
+                            }
                           >
                             {user.status === "suspended" ? (
-                              <Unlock className="h-3 w-3" />
+                              <Unlock className="h-3 w-3" aria-hidden="true" />
                             ) : (
-                              <Lock className="h-3 w-3" />
+                              <Lock className="h-3 w-3" aria-hidden="true" />
                             )}
                           </Button>
                         </div>
@@ -411,10 +407,15 @@ export default function AdminUsersPage() {
           </div>
 
           {paginatedUsers.length === 0 && (
-            <div className="p-8 text-center text-muted-foreground">
+            <div className="p-8 text-center text-muted-foreground" role="status">
               No users found
             </div>
           )}
+          <div aria-live="polite" aria-atomic="true" className="sr-only">
+            {filteredUsers.length === 0
+              ? "No users match the current filters."
+              : `Showing ${paginatedUsers.length} of ${filteredUsers.length} users.`}
+          </div>
         </div>
 
         {/* Pagination */}
@@ -432,8 +433,9 @@ export default function AdminUsersPage() {
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
                 className="border-2 border-foreground"
+                aria-label="Previous page"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               </Button>
               <Button
                 variant="outline"
@@ -443,8 +445,9 @@ export default function AdminUsersPage() {
                 }
                 disabled={currentPage === totalPages}
                 className="border-2 border-foreground"
+                aria-label="Next page"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
           </div>

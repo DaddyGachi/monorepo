@@ -20,6 +20,32 @@ export type AdminOperation =
   | 'default_deal'
   | 'stake_bond'
   | 'unstake_bond'
+  | 'request_rent_release'
+  | 'challenge_rent_release'
+  | 'resolve_rent_dispute'
+  | 'settle_rent_release_timeout'
+  | 'settle_dispute_timeout'
+  | 'register_deal'
+  | 'record_equity_payment'
+  | 'stake'
+  | 'unstake'
+  | 'claim'
+  | 'utilize_stake'
+  | 'delegate'
+  | 'request_undelegate'
+  | 'complete_undelegate'
+  | 'claim_delegatee_rewards'
+  | 'set_commission'
+  | 'claim_commission'
+  | 'fund_epoch_rewards'
+  | 'seal_epoch'
+  | 'rent_wallet_credit'
+  | 'rent_wallet_debit'
+  // governance contract (issue #1494). Both are permissionless on-chain — the
+  // contract functions take no Address and call no require_auth() — so the
+  // admin key only pays the fee and submits; it authorizes nothing user-specific.
+  | 'finalize_proposal'
+  | 'execute_proposal'
 
 /**
  * Parameters for admin operations
@@ -149,6 +175,25 @@ export class AdminSigningService {
       'default_deal',
       'stake_bond',
       'unstake_bond',
+      'request_rent_release',
+      'challenge_rent_release',
+      'resolve_rent_dispute',
+      'settle_rent_release_timeout',
+      'settle_dispute_timeout',
+      'register_deal',
+      'record_equity_payment',
+      'stake',
+      'unstake',
+      'claim',
+      'utilize_stake',
+      'delegate',
+      'request_undelegate',
+      'complete_undelegate',
+      'claim_delegatee_rewards',
+      'set_commission',
+      'claim_commission',
+      'finalize_proposal',
+      'execute_proposal',
     ]
     if (!allowedOperations.includes(params.operation)) {
       throw new ConfigurationError(

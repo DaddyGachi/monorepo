@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { PropertyListingForm } from "@/components/landlord/property-listing-form";
+import { CollaborativeDraftEditor } from "@/components/properties/CollaborativeDraftEditor";
 import {
   getLandlordProperty,
   updateLandlordProperty,
@@ -12,11 +13,13 @@ import {
 } from "@/lib/landlordPropertiesApi";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import useAuthStore from "@/store/useAuthStore";
 
 export default function EditPropertyPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const user = useAuthStore((state) => state.user);
   const [property, setProperty] = useState<LandlordPropertyRecord | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -52,21 +55,39 @@ export default function EditPropertyPage() {
         {loading ? (
           <Skeleton className="h-96 w-full" />
         ) : property ? (
-          <PropertyListingForm
-            mode="edit"
-            initialProperty={property}
-            submitLabel="Save changes"
-            onSubmit={async (payload) => {
-              try {
-                await updateLandlordProperty(id, payload);
-                showSuccessToast("Property updated.");
-                router.push("/dashboard/landlord/properties");
-              } catch (error) {
-                showErrorToast(error, "Failed to update property");
-                throw error;
-              }
-            }}
-          />
+          <>
+            {user && (
+              <div className="mb-8">
+                <CollaborativeDraftEditor
+                  draftId={id}
+                  currentUserId={user.id}
+                  currentUserName={user.name || "Landlord"}
+                  initialFields={{
+                    title: property.title,
+                    description: property.description ?? "",
+                    address: property.address,
+                    bedrooms: String(property.bedrooms),
+                    bathrooms: String(property.bathrooms),
+                  }}
+                />
+              </div>
+            )}
+            <PropertyListingForm
+              mode="edit"
+              initialProperty={property}
+              submitLabel="Save changes"
+              onSubmit={async (payload) => {
+                try {
+                  await updateLandlordProperty(id, payload);
+                  showSuccessToast("Property updated.");
+                  router.push("/dashboard/landlord/properties");
+                } catch (error) {
+                  showErrorToast(error, "Failed to update property");
+                  throw error;
+                }
+              }}
+            />
+          </>
         ) : (
           <p className="text-muted-foreground">Property not found.</p>
         )}

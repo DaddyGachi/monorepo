@@ -5,6 +5,7 @@ import { MapPin, Clock, DollarSign, FileText, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { MoneyValue } from "@/components/ui/data-state";
 import type { InspectionJob } from "@/lib/propertyInspectionApi";
 
 interface JobCardProps {
@@ -82,7 +83,13 @@ export function JobCard({ job, onClaim, isClaiming }: JobCardProps) {
         <div className="flex gap-6 text-sm">
           <div className="flex items-center gap-1 font-medium text-foreground">
             <DollarSign className="h-4 w-4 text-primary" />
-            ₦{(job.offeredFee || 0).toLocaleString()}
+            <MoneyValue
+              status="ready"
+              amount={job.offeredFee}
+              format={(fee) => `₦${fee.toLocaleString()}`}
+              skeletonClassName="h-4 w-20"
+              unavailableLabel="Fee unavailable"
+            />
           </div>
           <div className="flex items-center gap-1 text-muted-foreground">
             <Clock className="h-4 w-4" />

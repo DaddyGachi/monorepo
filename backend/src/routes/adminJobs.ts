@@ -3,10 +3,11 @@ import { z } from 'zod'
 import { validate } from '../middleware/validate.js'
 import { AppError } from '../errors/AppError.js'
 import { ErrorCode } from '../errors/errorCodes.js'
-import { env } from '../schemas/env.js'
+import { assertAdminSecret as requireAdmin } from '../middleware/adminSecret.js'
 import { getJobStore } from '../jobs/scheduler/store.js'
 import { getScheduler } from '../jobs/scheduler/worker.js'
 import { JobStatus } from '../jobs/scheduler/types.js'
+import { getJobHealthReport } from '../jobs/jobObservability.js'
 
 const listJobsQuerySchema = z.object({
   status: z.nativeEnum(JobStatus).optional(),
@@ -31,13 +32,6 @@ const rescheduleBodySchema = z.object({
 export function createAdminJobsRouter() {
   const router = Router()
 
-  function requireAdmin(req: Request) {
-    const headerSecret = req.headers['x-admin-secret']
-    if (env.MANUAL_ADMIN_SECRET && headerSecret !== env.MANUAL_ADMIN_SECRET) {
-      throw new AppError(ErrorCode.FORBIDDEN, 403, 'Invalid admin secret')
-    }
-  }
-
   /**
    * GET /api/admin/jobs
    * List all jobs with optional status filter and pagination.
@@ -56,6 +50,22 @@ export function createAdminJobsRouter() {
       }
     },
   )
+
+  /**
+   * GET /api/admin/jobs/health
+   * Scheduled-job and worker health: per job, what it does, when it last ran,
+   * how long it took, how many records it processed, and whether it is overdue.
+   *
+   * Registered before `/:id` so the literal path wins over the parameter.
+   */
+  router.get('/health', (req: Request, res: Response, next: NextFunction) => {
+    try {
+      requireAdmin(req)
+      res.json(getJobHealthReport())
+    } catch (err) {
+      next(err)
+    }
+  })
 
   /**
    * GET /api/admin/jobs/:id

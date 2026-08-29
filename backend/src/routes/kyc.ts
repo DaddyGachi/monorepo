@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { z } from 'zod'
 import { kycSubmissionSchema, kycStatusSchema } from '../schemas/kyc.js'
 import { kycRepository, MAX_ATTEMPTS } from '../repositories/KycRepository.js'
+import { PostgresUserRepository } from '../repositories/AuthRepository.js'
 import { createKycProvider } from '../services/kycProvider.js'
 import { authenticateToken } from '../middleware/auth.js'
 import { requirePermission } from '../middleware/rbac.js'
@@ -12,6 +13,8 @@ import { verifyHmacSha256 } from '../utils/webhookSignature.js'
 import { emitKycStatusChanged } from '../services/index.js'
 import { logger } from '../utils/logger.js'
 import { recordKycSubmission } from '../metrics.js'
+import { outboxStore, TxType } from '../outbox/index.js'
+import { createSorobanAdapter, getSorobanConfigFromEnv } from '../soroban/index.js'
 
 const router = Router()
 const kycProvider = createKycProvider()
@@ -216,6 +219,35 @@ router.post(
 
       await emitKycStatusChanged(record.userId, 'approved')
 
+      // Enqueue allowlist add operation for on-chain recording
+      const authRepository = new PostgresUserRepository()
+      const user = await authRepository.getById(record.userId)
+      if (user?.walletAddress) {
+        await outboxStore.create({
+          txType: TxType.ALLOWLIST_ADD,
+          source: 'kyc_approval',
+          ref: recordId,
+          payload: {
+            address: user.walletAddress,
+            label: 'approved',
+          },
+          aggregateId: record.userId,
+          aggregateType: 'user',
+          eventType: 'KYC_APPROVED',
+          requestId: (req as any).requestId,
+        })
+        logger.info('Allowlist add enqueued for KYC approval', {
+          outboxRef: recordId,
+          userId: record.userId,
+          address: user.walletAddress,
+        })
+      } else {
+        logger.warn('User has no wallet address, skipping allowlist add', {
+          userId: record.userId,
+          kycId: recordId,
+        })
+      }
+
       res.json({ success: true })
     } catch (error) {
       next(error)
@@ -252,7 +284,84 @@ router.post(
 
       await emitKycStatusChanged(record.userId, 'rejected')
 
+      // Enqueue allowlist remove operation for on-chain recording
+      const authRepository = new PostgresUserRepository()
+      const user = await authRepository.getById(record.userId)
+      if (user?.walletAddress) {
+        await outboxStore.create({
+          txType: TxType.ALLOWLIST_REMOVE,
+          source: 'kyc_rejection',
+          ref: recordId,
+          payload: {
+            address: user.walletAddress,
+          },
+          aggregateId: record.userId,
+          aggregateType: 'user',
+          eventType: 'KYC_REJECTED',
+          requestId: (req as any).requestId,
+        })
+        logger.info('Allowlist remove enqueued for KYC rejection', {
+          outboxRef: recordId,
+          userId: record.userId,
+          address: user.walletAddress,
+        })
+      } else {
+        logger.warn('User has no wallet address, skipping allowlist remove', {
+          userId: record.userId,
+          kycId: recordId,
+        })
+      }
+
       res.json({ success: true })
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+router.get(
+  '/admin/:recordId/allowlist-status',
+  authenticateToken,
+  requirePermission('kyc', 'verify'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { recordId } = req.params
+
+      const record = await kycRepository.findById(recordId)
+      if (!record) {
+        throw new AppError(ErrorCode.NOT_FOUND, 404, 'KYC record not found')
+      }
+
+      const authRepository = new PostgresUserRepository()
+      const user = await authRepository.getById(record.userId)
+      
+      if (!user?.walletAddress) {
+        return res.json({
+          success: true,
+          data: {
+            isAllowlisted: false,
+            hasWalletAddress: false,
+            walletAddress: null,
+            entry: null,
+          },
+        })
+      }
+
+      const sorobanConfig = getSorobanConfigFromEnv(process.env)
+      const sorobanAdapter = createSorobanAdapter(sorobanConfig)
+      
+      const isAllowlisted = sorobanAdapter.isAllowlisted ? await sorobanAdapter.isAllowlisted(user.walletAddress) : false
+      const entry = sorobanAdapter.getAllowlistEntry ? await sorobanAdapter.getAllowlistEntry(user.walletAddress) : null
+
+      res.json({
+        success: true,
+        data: {
+          isAllowlisted,
+          hasWalletAddress: true,
+          walletAddress: user.walletAddress,
+          entry,
+        },
+      })
     } catch (error) {
       next(error)
     }

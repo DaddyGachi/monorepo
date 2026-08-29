@@ -3,10 +3,21 @@ import { LegalPage } from "@/components/legal/LegalPage";
 
 export const dynamic = "force-static";
 
+/**
+ * Non-canonical duplicate of `/terms-of-service`.
+ *
+ * Every section below is placeholder text, while `/terms-of-service` carries
+ * the substantive terms and is the route the app links to. Until a maintainer
+ * confirms which route is canonical (see #1446), this one is excluded from
+ * indexing and points its canonical URL at `/terms-of-service` so search
+ * engines cannot deliver a user to the placeholder version.
+ */
 export const metadata: Metadata = {
-  title: "Terms of Service — Shelterflex",
+  title: "Terms of Service",
   description:
     "Read the Shelterflex Terms of Service. Official legal copy will be updated before launch.",
+  alternates: { canonical: "/terms-of-service" },
+  robots: { index: false, follow: false },
 };
 
 const PLACEHOLDER =

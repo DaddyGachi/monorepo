@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
   DollarSign,
   CheckCircle,
   Clock,
-  AlertCircle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import {
+  EmptyState,
+  ErrorState,
+  ListRowSkeleton,
+  LoadingState,
+  MoneyValue,
+  StatCardSkeleton,
+} from "@/components/ui/data-state";
 import useAuthStore from "@/store/useAuthStore";
 import { getWhistleblowerEarnings, type EarningsResponse } from "@/lib/api/whistleblowerApplications";
 import { useCurrency } from "@/contexts/CurrencyContext";
@@ -22,30 +29,49 @@ export default function WhistleblowerEarningsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchEarnings() {
-      if (!user?.id) {
-        setError("User not authenticated");
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const data = await getWhistleblowerEarnings(user.id);
-        setEarningsData(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load earnings");
-      } finally {
-        setLoading(false);
-      }
+  const fetchEarnings = useCallback(async () => {
+    if (!user?.id) {
+      setError("User not authenticated");
+      setLoading(false);
+      return;
     }
 
-    fetchEarnings();
+    try {
+      const data = await getWhistleblowerEarnings(user.id);
+      setEarningsData(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load earnings");
+    } finally {
+      setLoading(false);
+    }
   }, [user?.id]);
 
-  const totalEarnings = earningsData?.totals.totalNgn || 0;
-  const completedEarnings = earningsData?.totals.paidNgn || 0;
-  const pendingEarnings = earningsData?.totals.pendingNgn || 0;
+  useEffect(() => {
+    fetchEarnings();
+  }, [fetchEarnings]);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchEarnings();
+  }, [fetchEarnings]);
+
+  // Amounts stay null until the server sends them, so an unreachable earnings
+  // service dashes out rather than reporting a ₦0 balance.
+  const totalEarnings = earningsData?.totals.totalNgn ?? null;
+  const completedEarnings = earningsData?.totals.paidNgn ?? null;
+  const pendingEarnings = earningsData?.totals.pendingNgn ?? null;
+
+  const moneyStatus: "loading" | "error" | "ready" = loading
+    ? "loading"
+    : error || !earningsData
+      ? "error"
+      : "ready";
+
+  /** Pairs an NGN figure with its USDC counterpart for the dual-currency display. */
+  const formatPair = (usdc: number | undefined) => (ngn: number) =>
+    formatAmount(ngn, usdc ?? 0);
 
   // Map backend status to frontend status
   const mapStatus = (status: string): "completed" | "pending" => {
@@ -84,27 +110,27 @@ export default function WhistleblowerEarningsPage() {
 
           {/* Loading State */}
           {loading && (
-            <Card className="border-3 border-foreground p-8 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-              <div className="flex items-center justify-center gap-3">
-                <div className="h-6 w-6 animate-spin border-3 border-foreground border-t-primary rounded-full" />
-                <p className="font-bold">Loading earnings...</p>
+            <LoadingState label="Loading your earnings" className="space-y-8">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <StatCardSkeleton key={`wb-earning-stat-${i}`} />
+                ))}
               </div>
-            </Card>
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <ListRowSkeleton key={`wb-earning-row-${i}`} />
+                ))}
+              </div>
+            </LoadingState>
           )}
 
           {/* Error State */}
-          {error && (
-            <Card className="border-3 border-destructive p-8 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-6 w-6 text-destructive shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold text-destructive mb-1">
-                    Failed to Load Earnings
-                  </p>
-                  <p className="text-sm text-destructive/80">{error}</p>
-                </div>
-              </div>
-            </Card>
+          {!loading && error && (
+            <ErrorState
+              title="Failed to load earnings"
+              description={error}
+              onRetry={retry}
+            />
           )}
 
           {/* Content State */}
@@ -122,16 +148,24 @@ export default function WhistleblowerEarningsPage() {
                         Total Earnings
                       </p>
                       <p className="text-2xl font-black md:text-3xl">
-                        {formatAmount(
-                          totalEarnings,
-                          earningsData.totals.totalUsdc ?? 0,
-                        )}
+                        <MoneyValue
+                          status={moneyStatus}
+                          amount={totalEarnings}
+                          format={formatPair(earningsData.totals.totalUsdc)}
+                          skeletonClassName="h-8 w-32"
+                          unavailableLabel="Total earnings unavailable"
+                        />
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {formatDual(
-                          totalEarnings,
-                          earningsData.totals.totalUsdc ?? 0,
-                        )}
+                        <MoneyValue
+                          status={moneyStatus}
+                          amount={totalEarnings}
+                          format={(ngn) =>
+                            formatDual(ngn, earningsData.totals.totalUsdc ?? 0)
+                          }
+                          skeletonClassName="h-3 w-24"
+                          unavailableLabel="Total earnings unavailable"
+                        />
                       </p>
                     </div>
                   </div>
@@ -147,10 +181,13 @@ export default function WhistleblowerEarningsPage() {
                         Completed
                       </p>
                       <p className="text-2xl font-black md:text-3xl">
-                        {formatAmount(
-                          completedEarnings,
-                          earningsData.totals.paidUsdc ?? 0,
-                        )}
+                        <MoneyValue
+                          status={moneyStatus}
+                          amount={completedEarnings}
+                          format={formatPair(earningsData.totals.paidUsdc)}
+                          skeletonClassName="h-8 w-32"
+                          unavailableLabel="Completed earnings unavailable"
+                        />
                       </p>
                     </div>
                   </div>
@@ -166,10 +203,13 @@ export default function WhistleblowerEarningsPage() {
                         Pending
                       </p>
                       <p className="text-2xl font-black md:text-3xl">
-                        {formatAmount(
-                          pendingEarnings,
-                          earningsData.totals.pendingUsdc ?? 0,
-                        )}
+                        <MoneyValue
+                          status={moneyStatus}
+                          amount={pendingEarnings}
+                          format={formatPair(earningsData.totals.pendingUsdc)}
+                          skeletonClassName="h-8 w-32"
+                          unavailableLabel="Pending earnings unavailable"
+                        />
                       </p>
                     </div>
                   </div>
@@ -182,14 +222,15 @@ export default function WhistleblowerEarningsPage() {
                   Earnings History
                 </h2>
                 {earningsData.history.length === 0 ? (
-                  <Card className="border-3 border-foreground p-8 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                    <div className="text-center">
-                      <p className="text-muted-foreground mb-2">No earnings yet</p>
-                      <p className="text-sm text-muted-foreground">
-                        Start reporting vacant apartments to earn rewards
-                      </p>
-                    </div>
-                  </Card>
+                  <EmptyState
+                    icon={DollarSign}
+                    title="No earnings yet"
+                    description="Report a vacant apartment — you earn a reward once a tenant rents it through Shelterflex."
+                    action={{
+                      label: "Report an apartment",
+                      href: "/whistleblower/report",
+                    }}
+                  />
                 ) : (
                   <div className="space-y-3">
                     {earningsData.history.map((earning) => {

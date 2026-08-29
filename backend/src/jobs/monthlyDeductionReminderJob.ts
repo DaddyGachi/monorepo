@@ -1,5 +1,6 @@
 import { sendMonthlyDeductionAdvanceNotices } from '../services/salaryDeductionService.js'
 import { logger } from '../utils/logger.js'
+import { observeJobRun, sumCounts } from './jobObservability.js'
 
 /**
  * Sends advance deduction notices to employer webhook URLs for the upcoming pay cycle.
@@ -34,13 +35,10 @@ export class MonthlyDeductionReminderJob {
   }
 
   async poll(referenceDate?: Date): Promise<void> {
-    try {
+    await observeJobRun('monthly-deduction-reminder', async () => {
       const result = await sendMonthlyDeductionAdvanceNotices(referenceDate)
       logger.info('MonthlyDeductionReminderJob completed', result)
-    } catch (error) {
-      logger.error('MonthlyDeductionReminderJob failed', {
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
+      return { recordsProcessed: sumCounts(result) }
+    })
   }
 }

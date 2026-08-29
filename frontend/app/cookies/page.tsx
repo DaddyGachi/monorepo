@@ -3,10 +3,17 @@ import { LegalPage } from "@/components/legal/LegalPage";
 
 export const dynamic = "force-static";
 
+/**
+ * Canonical cookie policy. Unlike `/privacy` and `/terms`, this route has no
+ * longer-form duplicate and is linked from `components/CookieConsentBanner.tsx`,
+ * so it is not orphaned — its content is placeholder, but the route is the
+ * real one.
+ */
 export const metadata: Metadata = {
-  title: "Cookie Policy — Shelterflex",
+  title: "Cookie Policy",
   description:
     "Understand how Shelterflex uses cookies and similar technologies. Official legal copy will be updated before launch.",
+  alternates: { canonical: "/cookies" },
 };
 
 const PLACEHOLDER =

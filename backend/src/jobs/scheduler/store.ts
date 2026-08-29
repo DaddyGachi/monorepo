@@ -492,6 +492,7 @@ export class PostgresJobStore implements JobStore {
       durationMs: row.duration_ms as number | null,
       errorMessage: (row.error_message as string | null) ?? null,
       payload: (row.payload as Record<string, unknown>) ?? {},
+      fencingToken: (row.fencing_token as number | null) ?? null,
       createdAt: new Date(row.created_at as string),
     }))
   }

@@ -1,3 +1,5 @@
+import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -10,6 +12,25 @@ import {
 import { Input } from "@/components/ui/input"
 import { ThemeToggle } from "@/components/theme-toggle"
 
+/**
+ * Internal component gallery — a development artefact, not a user-facing page.
+ *
+ * Gated on NODE_ENV rather than a feature flag: FeatureFlagProvider resolves
+ * client-side from the backend, so a flag would still ship the route and its
+ * markup to production and only hide it after hydration. Checking NODE_ENV in
+ * the server component keeps the route reachable in `next dev` while making it
+ * a genuine 404 in a production build.
+ *
+ * The gallery still renders during `next build`, so it continues to type-check
+ * against the component library.
+ */
+const isDevelopment = process.env.NODE_ENV === "development"
+
+export const metadata: Metadata = {
+  title: "Design System",
+  robots: { index: false, follow: false },
+}
+
 const tokenRows = [
   { name: "Primary", token: "--primary", sampleClass: "bg-primary" },
   { name: "Secondary", token: "--secondary", sampleClass: "bg-secondary" },
@@ -18,6 +39,10 @@ const tokenRows = [
 ]
 
 export default function DesignSystemPage() {
+  if (!isDevelopment) {
+    notFound()
+  }
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <section className="ds-container py-8 md:py-12 lg:py-16 ds-stack ds-reveal">

@@ -76,7 +76,7 @@ export function buildLeaseTemplateData(
     landlordName: `Landlord ${deal.landlordId}`,
     propertyAddress,
     annualRentNgn: deal.annualRentNgn,
-    paymentType: deal.paymentType || "installment",
+    paymentType: "installment",
     depositAmount: deal.depositNgn,
     termMonths: deal.termMonths,
     startDate: new Date().toISOString().split("T")[0],

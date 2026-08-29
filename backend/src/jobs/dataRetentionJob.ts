@@ -1,6 +1,7 @@
 import { getPool } from '../db.js'
 import { logger } from '../utils/logger.js'
 import { erasureService } from '../services/erasureService.js'
+import { observeJobRun, sumCounts } from './jobObservability.js'
 
 export interface DataRetentionResult {
   onboardingDraftsDeleted: number
@@ -48,7 +49,10 @@ export class DataRetentionJob {
   }
 
   async poll(now = new Date()): Promise<void> {
-    await this.runRetention(now)
+    await observeJobRun('data-retention', async () => {
+      const result = await this.runRetention(now)
+      return { recordsProcessed: sumCounts(result) }
+    })
   }
 
   async runRetention(now = new Date()): Promise<DataRetentionResult> {

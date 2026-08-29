@@ -15,15 +15,28 @@ import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar"
 import {
   getPaymentSchedule,
   getWalletBalance,
+  getMyDisputes,
   initiateQuickPay,
   type PaymentScheduleItem,
   type TenantDeal,
+  type PaymentDispute,
 } from "@/lib/tenantApi"
 import { showErrorToast, showSuccessToast } from "@/lib/toast"
 import { usePaymentHistory } from "@/hooks/usePaymentHistory"
 import { PaymentTimeline } from "@/components/payment/PaymentTimeline"
 import { UpcomingScheduleTable } from "@/components/payment/UpcomingScheduleTable"
+import { DisputeDialog } from "@/components/payment/DisputeDialog"
+import { DisputeStatusTimeline } from "@/components/payment/DisputeStatusTimeline"
+import { canFileDispute } from "@/lib/disputeTimeline"
 import { formatNgn } from "@/lib/currency"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import type { PaymentHistoryItem } from "@/lib/tenantApi"
 
 type ActiveTab = "schedule" | "history"
 
@@ -38,6 +51,9 @@ export default function TenantPaymentsPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [submittingPeriod, setSubmittingPeriod] = useState<number | null>(null)
   const [optimisticStatuses, setOptimisticStatuses] = useState<Record<number, "pending" | "failed">>({})
+  const [disputes, setDisputes] = useState<PaymentDispute[]>([])
+  const [disputeDialogPayment, setDisputeDialogPayment] = useState<PaymentHistoryItem | null>(null)
+  const [viewDispute, setViewDispute] = useState<PaymentDispute | null>(null)
 
   const {
     payments,
@@ -52,9 +68,10 @@ export default function TenantPaymentsPage() {
   const loadData = async () => {
     setIsLoading(true)
     try {
-      const [scheduleRes, walletRes] = await Promise.all([
+      const [scheduleRes, walletRes, disputesRes] = await Promise.all([
         getPaymentSchedule(),
         getWalletBalance(),
+        getMyDisputes(),
       ])
 
       if (scheduleRes.success) {
@@ -68,6 +85,10 @@ export default function TenantPaymentsPage() {
 
       if (walletRes.success) {
         setWalletBalance(walletRes.data.balance)
+      }
+
+      if (disputesRes.success) {
+        setDisputes(disputesRes.data.disputes)
       }
     } catch (error: any) {
       showErrorToast(error?.message || "Failed to load payment data")
@@ -135,6 +156,30 @@ export default function TenantPaymentsPage() {
 
   const handleReceiptDownload = (reference: string) => {
     window.open(`/api/v1/tenant/payments/receipt/${reference}`, "_blank")
+  }
+
+  const disputeStatusByPayment: Record<string, PaymentDispute["status"] | null> = {}
+  for (const dispute of disputes) {
+    disputeStatusByPayment[dispute.paymentId] = dispute.status
+  }
+
+  const handleReportProblem = (paymentId: string) => {
+    const payment = payments.find((p) => p.id === paymentId)
+    if (!payment) return
+    if (!canFileDispute(disputes, paymentId)) {
+      showErrorToast("You already have an open dispute for this payment.")
+      return
+    }
+    setDisputeDialogPayment(payment)
+  }
+
+  const handleViewDispute = (paymentId: string) => {
+    const dispute = disputes.find((d) => d.paymentId === paymentId)
+    if (dispute) setViewDispute(dispute)
+  }
+
+  const handleDisputeFiled = () => {
+    void loadData()
   }
 
   if (isLoading) {
@@ -358,11 +403,37 @@ export default function TenantPaymentsPage() {
                 onLoadMore={loadMore}
                 hasMore={hasMore}
                 isLoading={isHistoryLoading}
+                disputeStatusByPayment={disputeStatusByPayment}
+                onReportProblem={handleReportProblem}
+                onViewDispute={handleViewDispute}
               />
             </Card>
           </div>
         </div>
       </main>
+
+      {disputeDialogPayment ? (
+        <DisputeDialog
+          payment={disputeDialogPayment}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setDisputeDialogPayment(null)
+          }}
+          onFiled={handleDisputeFiled}
+        />
+      ) : null}
+
+      <Dialog open={viewDispute !== null} onOpenChange={(open) => { if (!open) setViewDispute(null) }}>
+        <DialogContent className="border-3 border-foreground shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
+          <DialogHeader>
+            <DialogTitle>Dispute Status</DialogTitle>
+            <DialogDescription>
+              Track your dispute through review and resolution.
+            </DialogDescription>
+          </DialogHeader>
+          {viewDispute ? <DisputeStatusTimeline dispute={viewDispute} /> : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

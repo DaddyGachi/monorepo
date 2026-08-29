@@ -17,7 +17,7 @@ import {
 import { AppError } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { logger } from "../utils/logger.js";
-import { auditLog } from "../repositories/AuditRepository.js";
+import { auditLog } from "../utils/auditLogger.js";
 import { notificationService } from "./notificationService.js";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
@@ -53,7 +53,7 @@ export class AgreementService {
    * Generate rental agreement PDF
    */
   async generateAgreement(dealId: string): Promise<RentalAgreement> {
-    const deal = await dealStore.getById(dealId);
+    const deal = await dealStore.findById(dealId);
     if (!deal) {
       throw new AppError(ErrorCode.NOT_FOUND, 404, `Deal ${dealId} not found`);
     }
@@ -94,13 +94,11 @@ export class AgreementService {
     );
 
     // Audit log
-    await auditLog({
-      actor: "system",
-      action: "AGREEMENT_GENERATED",
-      resourceType: "agreement",
-      resourceId: agreement.id,
-      details: { dealId, pdfKey },
-    });
+    auditLog(
+      "AGREEMENT_GENERATED",
+      { userId: "system", requestId: "unknown", ip: "unknown", actorType: "system" },
+      { agreementId: agreement.id, dealId, pdfKey },
+    );
 
     logger.info(`Generated agreement ${agreement.id} for deal ${dealId}`);
     return agreement;
@@ -135,29 +133,34 @@ export class AgreementService {
       "landlord",
     );
 
-    // Send signature request emails
-    await notificationService.sendSignatureRequest(
-      tenant.email,
-      "tenant",
-      tenant.name,
-      `${process.env.FRONTEND_URL || "http://localhost:3000"}/agreements/${agreementId}/sign?token=${tenantToken}`,
-    );
+    // Send signature request notifications
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    await notificationService.create(tenant.id, {
+      category: "agreement_signature_request",
+      title: "Signature requested",
+      body: `Your signature is requested on the rental agreement for this deal.`,
+      data: {
+        agreementId,
+        signUrl: `${frontendUrl}/agreements/${agreementId}/sign?token=${tenantToken}`,
+      },
+    });
 
-    await notificationService.sendSignatureRequest(
-      landlord.email,
-      "landlord",
-      landlord.name,
-      `${process.env.FRONTEND_URL || "http://localhost:3000"}/agreements/${agreementId}/sign?token=${landlordToken}`,
-    );
+    await notificationService.create(landlord.id, {
+      category: "agreement_signature_request",
+      title: "Signature requested",
+      body: `Your signature is requested on the rental agreement for this deal.`,
+      data: {
+        agreementId,
+        signUrl: `${frontendUrl}/agreements/${agreementId}/sign?token=${landlordToken}`,
+      },
+    });
 
     // Audit log
-    await auditLog({
-      actor: "system",
-      action: "SIGNATURE_REQUESTED",
-      resourceType: "agreement",
-      resourceId: agreementId,
-      details: { tenantEmail: tenant.email, landlordEmail: landlord.email },
-    });
+    auditLog(
+      "AGREEMENT_SIGNATURE_REQUESTED",
+      { userId: "system", requestId: "unknown", ip: "unknown", actorType: "system" },
+      { agreementId, tenantEmail: tenant.email, landlordEmail: landlord.email },
+    );
   }
 
   /**
@@ -222,24 +225,20 @@ export class AgreementService {
       );
 
       // Audit log
-      await auditLog({
-        actor: "system",
-        action: "AGREEMENT_FULLY_EXECUTED",
-        resourceType: "agreement",
-        resourceId: agreementId,
-        details: { dealId: agreement.dealId },
-      });
+      auditLog(
+        "AGREEMENT_FULLY_EXECUTED",
+        { userId: "system", requestId: "unknown", ip: "unknown", actorType: "system" },
+        { agreementId, dealId: agreement.dealId },
+      );
 
       logger.info(`Agreement ${agreementId} is now fully executed`);
     } else {
       // Audit log for single signature
-      await auditLog({
-        actor: partyId,
-        action: "AGREEMENT_SIGNED",
-        resourceType: "agreement",
-        resourceId: agreementId,
-        details: { partyType },
-      });
+      auditLog(
+        "AGREEMENT_SIGNED",
+        { userId: partyId, requestId: "unknown", ip: "unknown", actorType: "user" },
+        { agreementId, partyType },
+      );
     }
 
     return updated;

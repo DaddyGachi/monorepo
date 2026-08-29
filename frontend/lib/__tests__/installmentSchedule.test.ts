@@ -92,4 +92,86 @@ describe('hasArrears', () => {
     expect(hasArrears([inst(1, '2026-05-01T00:00:00Z', false)], NOW)).toBe(true)
     expect(hasArrears([inst(1, '2026-05-01T00:00:00Z', true)], NOW)).toBe(false)
   })
+
+  it('returns false for an empty schedule', () => {
+    expect(hasArrears([], NOW)).toBe(false)
+  })
+
+  it('returns false when all instalments are paid even if past due', () => {
+    expect(hasArrears([inst(1, '2026-01-01T00:00:00Z', true)], NOW)).toBe(false)
+  })
+
+  it('returns true when even one of many instalments is overdue', () => {
+    const instalments = [
+      inst(1, '2026-03-01T00:00:00Z', true),
+      inst(2, '2026-04-01T00:00:00Z', true),
+      inst(3, '2026-05-01T00:00:00Z', false),
+      inst(4, '2026-09-01T00:00:00Z', false),
+    ]
+    expect(hasArrears(instalments, NOW)).toBe(true)
+  })
+})
+
+describe('deriveInstalmentStatus - boundary cases', () => {
+  it('labels instalment due exactly on the boundary as due', () => {
+    // Due date = exactly DUE_SOON_WINDOW_DAYS (7) from now
+    const dueDate = new Date(NOW.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    expect(deriveInstalmentStatus(inst(1, dueDate, false), NOW)).toBe('due')
+  })
+
+  it('labels instalment due just past the boundary as upcoming', () => {
+    const dueDate = new Date(NOW.getTime() + 8 * 24 * 60 * 60 * 1000).toISOString()
+    expect(deriveInstalmentStatus(inst(1, dueDate, false), NOW)).toBe('upcoming')
+  })
+
+  it('labels instalment due yesterday as overdue', () => {
+    const dueDate = new Date(NOW.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString()
+    expect(deriveInstalmentStatus(inst(1, dueDate, false), NOW)).toBe('overdue')
+  })
+})
+
+describe('summarizePayments - edge cases', () => {
+  it('handles schedule with all overdue instalments', () => {
+    const schedule = [
+      inst(1, '2026-01-01T00:00:00Z', false),
+      inst(2, '2026-02-01T00:00:00Z', false),
+    ]
+    const s = summarizePayments(schedule, NOW)
+    expect(s.arrearsAmount).toBe(200_000)
+    expect(s.overdueSince).toBe('2026-01-01T00:00:00Z')
+    expect(s.progressPercent).toBe(0)
+  })
+
+  it('handles schedule with all upcoming instalments', () => {
+    const schedule = [
+      inst(1, '2026-09-01T00:00:00Z', false),
+      inst(2, '2026-10-01T00:00:00Z', false),
+    ]
+    const s = summarizePayments(schedule, NOW)
+    expect(s.arrearsAmount).toBe(0)
+    expect(s.overdueSince).toBeNull()
+    expect(s.progressPercent).toBe(0)
+    expect(s.monthsRemaining).toBe(2)
+  })
+
+  it('nextPayment selects the earliest unpaid instalment', () => {
+    const schedule = [
+      inst(3, '2026-09-01T00:00:00Z', false),
+      inst(1, '2026-07-01T00:00:00Z', false),
+      inst(2, '2026-08-01T00:00:00Z', true),
+    ]
+    const s = summarizePayments(schedule, NOW)
+    expect(s.nextPayment?.period).toBe(1)
+  })
+
+  it('progressPercent rounds correctly', () => {
+    const schedule = [
+      inst(1, '2026-01-01T00:00:00Z', true),
+      inst(2, '2026-02-01T00:00:00Z', false),
+      inst(3, '2026-03-01T00:00:00Z', false),
+    ]
+    const s = summarizePayments(schedule, NOW)
+    // 100000 / 300000 = 33.33% → rounds to 33
+    expect(s.progressPercent).toBe(33)
+  })
 })

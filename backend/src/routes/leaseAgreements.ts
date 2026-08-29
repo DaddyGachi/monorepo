@@ -2,7 +2,7 @@
  * Lease Agreement routes
  */
 
-import { Router, Response } from 'express'
+import { Router, Request, Response } from 'express'
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth.js'
 import { leaseAgreementStore } from '../models/leaseAgreementStore.js'
 import { LeaseStatus } from '../models/leaseAgreement.js'

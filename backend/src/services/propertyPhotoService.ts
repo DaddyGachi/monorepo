@@ -1,10 +1,9 @@
-import type express from 'express'
 import { uploadFile, buildPropertyMediaObjectKey } from './storageService.js'
 import { propertyPhotoStore } from '../models/propertyPhotoStore.js'
 import type { PropertyPhoto } from '../models/propertyPhoto.js'
 
 export class PropertyPhotoService {
-  async uploadPropertyPhotos(propertyId: string, files: express.Multer.File[]): Promise<PropertyPhoto[]> {
+  async uploadPropertyPhotos(propertyId: string, files: Express.Multer.File[]): Promise<PropertyPhoto[]> {
     const uploadedPhotos: PropertyPhoto[] = []
 
     for (const file of files) {

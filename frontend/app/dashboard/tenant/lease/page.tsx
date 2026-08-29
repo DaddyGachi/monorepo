@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Building2,
@@ -18,11 +18,14 @@ import {
   Briefcase,
   AlertCircle,
   Loader2,
+  FileSignature,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import { LeaseESignature } from "@/components/properties/LeaseESignature";
 import {
   searchEmployers,
   updateDealRepayment,
@@ -49,13 +52,94 @@ interface DocWithContent extends TenantLeaseDocument {
   };
 }
 
+interface DocPreviewModalProps {
+  doc: DocWithContent;
+  onClose: () => void;
+}
+
+function DocPreviewModal({ doc, onClose }: DocPreviewModalProps) {
+  const titleId = "doc-preview-title";
+  const focusTrapRef = useFocusTrap(true, onClose);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={focusTrapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="max-h-[90vh] max-w-2xl w-full overflow-y-auto border-3 border-foreground bg-card shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] focus:outline-none"
+      >
+        <div className="sticky top-0 border-b-3 border-foreground bg-card px-6 py-4 flex items-center justify-between">
+          <h2 id={titleId} className="text-xl font-bold">
+            {doc.name}
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="Close document preview"
+            className="flex h-8 w-8 items-center justify-center border-2 border-foreground bg-muted hover:bg-primary transition-all focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div className="flex flex-wrap gap-4 text-sm font-bold border-b-2 border-dashed border-foreground pb-4">
+            <div>
+              <p className="text-xs text-muted-foreground">Date</p>
+              <p>{new Date(doc.date).toLocaleDateString()}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Size</p>
+              <p>{doc.size}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Status</p>
+              <span className="capitalize inline-flex items-center gap-1 border-2 border-foreground px-2 py-1 bg-primary">
+                {doc.status}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <p className="text-muted-foreground">
+              Document preview not available. Please download to view full
+              content.
+            </p>
+          </div>
+
+          <div className="border-t-3 border-foreground pt-4 flex gap-3">
+            <Button
+              className="flex-1 border-2 border-foreground bg-primary py-3 font-bold shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] transition-all hover:translate-x-px hover:translate-y-px hover:shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
+              onClick={() => { if (doc.url) window.open(doc.url, "_blank"); }}
+            >
+              <Download className="mr-2 h-4 w-4" aria-hidden="true" />
+              Download PDF
+            </Button>
+            <Button
+              onClick={onClose}
+              className="flex-1 border-2 border-foreground bg-transparent font-bold hover:bg-muted"
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TenantLeasePage() {
   const [leaseDetails, setLeaseDetails] = useState<TenantLeaseDetails | null>(
     null,
   );
   const [documents, setDocuments] = useState<TenantLeaseDocument[]>([]);
   const [dealId, setDealId] = useState<string | null>(null);
-
+  const [isSigningOpen, setIsSigningOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -215,9 +299,18 @@ export default function TenantLeasePage() {
                 View your lease details and documents
               </p>
             </div>
-            <div className="flex items-center gap-2 border-3 border-foreground bg-secondary px-4 py-2 font-bold">
-              <CheckCircle className="h-5 w-5" />
-              Active Lease
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={() => setIsSigningOpen(true)}
+                className="border-3 border-foreground bg-primary font-bold shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]"
+              >
+                <FileSignature className="mr-2 h-5 w-5" />
+                Sign Lease Agreement
+              </Button>
+              <div className="flex items-center gap-2 border-3 border-foreground bg-secondary px-4 py-2 font-bold">
+                <CheckCircle className="h-5 w-5" />
+                Active Lease
+              </div>
             </div>
           </div>
 
@@ -484,6 +577,7 @@ export default function TenantLeasePage() {
                         type="button"
                         className="flex flex-1 items-center gap-4 text-left"
                         onClick={() => setSelectedDocument(doc)}
+                        aria-label={`View details for ${doc.name}`}
                       >
                         <div className="flex h-10 w-10 items-center justify-center border-2 border-foreground bg-muted shrink-0">
                           <FileText className="h-5 w-5" />
@@ -513,74 +607,19 @@ export default function TenantLeasePage() {
               </Card>
 
               {selectedDocument && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                  <div className="max-h-[90vh] max-w-2xl w-full overflow-y-auto border-3 border-foreground bg-card shadow-[8px_8px_0px_0px_rgba(26,26,26,1)]">
-                    <div className="sticky top-0 border-b-3 border-foreground bg-card px-6 py-4 flex items-center justify-between">
-                      <h2 className="text-xl font-bold">
-                        {selectedDocument.name}
-                      </h2>
-                      <button
-                        onClick={() => setSelectedDocument(null)}
-                        className="flex h-8 w-8 items-center justify-center border-2 border-foreground bg-muted hover:bg-primary transition-all"
-                      >
-                        <X className="h-5 w-5" />
-                      </button>
-                    </div>
-
-                    <div className="p-6 space-y-6">
-                      <div className="flex flex-wrap gap-4 text-sm font-bold border-b-2 border-dashed border-foreground pb-4">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Date</p>
-                          <p>
-                            {new Date(
-                              selectedDocument.date,
-                            ).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Size</p>
-                          <p>{selectedDocument.size}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">
-                            Status
-                          </p>
-                          <span className="capitalize inline-flex items-center gap-1 border-2 border-foreground px-2 py-1 bg-primary">
-                            {selectedDocument.status}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-6">
-                        <p className="text-muted-foreground">
-                          Document preview not available. Please download to
-                          view full content.
-                        </p>
-                      </div>
-
-                      <div className="border-t-3 border-foreground pt-4 flex gap-3">
-                        <Button
-                          className="flex-1 border-2 border-foreground bg-primary py-3 font-bold shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] transition-all hover:translate-x-px hover:translate-y-px hover:shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
-                          onClick={() => {
-                            if (selectedDocument.url) {
-                              window.open(selectedDocument.url, "_blank");
-                            }
-                          }}
-                        >
-                          <Download className="mr-2 h-4 w-4" />
-                          Download PDF
-                        </Button>
-                        <Button
-                          onClick={() => setSelectedDocument(null)}
-                          className="flex-1 border-2 border-foreground bg-transparent font-bold hover:bg-muted"
-                        >
-                          Close
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <DocPreviewModal
+                  doc={selectedDocument}
+                  onClose={() => setSelectedDocument(null)}
+                />
               )}
+
+              <LeaseESignature
+                propertyId={dealId}
+                propertyName={leaseDetails.property.title}
+                dealId={dealId}
+                isOpen={isSigningOpen}
+                onClose={() => setIsSigningOpen(false)}
+              />
             </div>
 
             <div className="space-y-6">

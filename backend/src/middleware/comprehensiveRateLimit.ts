@@ -201,7 +201,7 @@ export function createComprehensiveRateLimiter(options: {
       if (error instanceof AppError) {
         return next(error)
       }
-      logger.error('Comprehensive rate limiting error:', error)
+      logger.error('Comprehensive rate limiting error:', undefined, error)
       next()
     }
   }

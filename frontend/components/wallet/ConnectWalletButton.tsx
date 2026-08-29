@@ -2,10 +2,22 @@
 
 import { useWallet } from "@/contexts/WalletContext"
 import { Button } from "@/components/ui/button"
-import { Wallet, Loader2, LogOut, ExternalLink } from "lucide-react"
+import { Wallet, Loader2, LogOut, ExternalLink, Lock, AlertTriangle } from "lucide-react"
+
+const BUTTON_CLASS =
+  "border-3 border-foreground font-bold shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] hover:shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:translate-x-0.5 hover:translate-y-0.5 transition-all min-h-[44px]"
 
 export function ConnectWalletButton() {
-  const { publicKey, connected, connecting, freighterInstalled, connect, disconnect } = useWallet()
+  const {
+    publicKey,
+    connected,
+    connecting,
+    freighterInstalled,
+    networkMismatch,
+    walletLocked,
+    connect,
+    disconnect,
+  } = useWallet()
 
   if (!freighterInstalled) {
     return (
@@ -23,6 +35,36 @@ export function ConnectWalletButton() {
           Install Freighter
         </Button>
       </a>
+    )
+  }
+
+  if (walletLocked) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={connect}
+        className={BUTTON_CLASS}
+        title="Freighter is installed but locked. Open the extension and enter your password."
+      >
+        <Lock className="mr-2 h-4 w-4" />
+        Unlock Freighter
+      </Button>
+    )
+  }
+
+  if (connected && publicKey && networkMismatch) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={disconnect}
+        className={`${BUTTON_CLASS} text-destructive`}
+        title="Freighter is on a different network. Switch it to Testnet to continue."
+      >
+        <AlertTriangle className="mr-2 h-4 w-4" />
+        Wrong Network — switch to Testnet
+      </Button>
     )
   }
 

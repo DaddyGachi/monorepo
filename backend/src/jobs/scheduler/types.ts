@@ -43,7 +43,12 @@ export interface CreateJobInput {
   maxRetries?: number
 }
 
-export type JobHandler = (job: ScheduledJob) => Promise<void>
+/**
+ * A handler may return the number of records it acted on. Doing so lets the
+ * scheduler distinguish "the job ran" from "the job did its work" — a run that
+ * completes having processed nothing looks identical otherwise.
+ */
+export type JobHandler = (job: ScheduledJob) => Promise<{ recordsProcessed?: number } | void>
 
 export enum JobRunStatus {
   STARTED = 'started',

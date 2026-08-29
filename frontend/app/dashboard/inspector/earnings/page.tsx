@@ -1,19 +1,17 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import Link from "next/link";
-import {
-  DollarSign,
-  Building2,
-  CheckCircle,
-  Clock,
-  RefreshCw,
-  FileText,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { DollarSign, CheckCircle, Clock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  EmptyState,
+  ErrorState,
+  ListRowSkeleton,
+  LoadingState,
+  MoneyValue,
+  StatCardSkeleton,
+} from "@/components/ui/data-state";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { propertyInspectionApi, type InspectorEarnings } from "@/lib/propertyInspectionApi";
@@ -42,9 +40,20 @@ export default function EarningsPage() {
     fetchEarnings();
   }, [fetchEarnings]);
 
-  const totalEarned = earnings?.totalEarnings || 0;
-  const paidAmount = totalEarned; // Assuming all approved inspections are paid
-  const pendingAmount = 0;
+  // Deliberately `null` rather than `0` when nothing has loaded: a failed fetch
+  // used to render "₦0 Total Earned", which is a plausible figure an inspector
+  // could act on. Unknown amounts render as a dash via MoneyValue instead.
+  const totalEarned = earnings ? earnings.totalEarnings : null;
+  const paidAmount = totalEarned; // Approved inspections are paid out in full.
+  const pendingAmount = earnings ? 0 : null;
+
+  const moneyStatus: "loading" | "error" | "ready" = isLoading
+    ? "loading"
+    : error || !earnings
+      ? "error"
+      : "ready";
+
+  const formatNaira = (amount: number) => `₦${amount.toLocaleString()}`;
 
   if (!isEnabled) {
     return (
@@ -88,74 +97,74 @@ export default function EarningsPage() {
 
           {/* Error */}
           {error && !isLoading && (
-            <Card className="mb-8 border-3 border-foreground p-6 text-center shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-              <p className="text-destructive">{error}</p>
-              <Button
-                onClick={fetchEarnings}
-                className="mt-4 border-3 border-foreground bg-primary shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Retry
-              </Button>
-            </Card>
+            <ErrorState
+              className="mb-8"
+              title="Failed to load earnings"
+              description={error}
+              onRetry={fetchEarnings}
+              retryLabel="Retry"
+            />
           )}
 
           {/* Stats */}
           {isLoading ? (
-            <div className="mb-8 grid gap-4 md:grid-cols-3">
+            <LoadingState
+              label="Loading earnings totals"
+              className="mb-8 grid gap-4 md:grid-cols-3"
+            >
               {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-32 border-3 border-foreground" />
+                <StatCardSkeleton key={i} className="h-32" />
               ))}
-            </div>
+            </LoadingState>
           ) : (
             <div className="mb-8 grid gap-4 md:grid-cols-3">
-              <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Total Earned
-                    </p>
-                    <p className="mt-2 text-2xl font-bold text-foreground">
-                      ₦{totalEarned.toLocaleString()}
-                    </p>
+              {[
+                {
+                  label: "Total Earned",
+                  amount: totalEarned,
+                  icon: DollarSign,
+                  iconClass: "bg-primary",
+                },
+                {
+                  label: "Paid",
+                  amount: paidAmount,
+                  icon: CheckCircle,
+                  iconClass: "bg-green-500",
+                },
+                {
+                  label: "Pending",
+                  amount: pendingAmount,
+                  icon: Clock,
+                  iconClass: "bg-accent",
+                },
+              ].map((stat) => (
+                <Card
+                  key={stat.label}
+                  className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">
+                        {stat.label}
+                      </p>
+                      <p className="mt-2 text-2xl font-bold text-foreground">
+                        <MoneyValue
+                          status={moneyStatus}
+                          amount={stat.amount}
+                          format={formatNaira}
+                          skeletonClassName="h-8 w-32"
+                          unavailableLabel={`${stat.label} unavailable`}
+                        />
+                      </p>
+                    </div>
+                    <div
+                      className={`flex h-12 w-12 items-center justify-center rounded-lg ${stat.iconClass}`}
+                    >
+                      <stat.icon className="h-6 w-6 text-foreground" aria-hidden="true" />
+                    </div>
                   </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-                    <DollarSign className="h-6 w-6 text-foreground" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Paid
-                    </p>
-                    <p className="mt-2 text-2xl font-bold text-foreground">
-                      ₦{paidAmount.toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-500">
-                    <CheckCircle className="h-6 w-6 text-foreground" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Pending
-                    </p>
-                    <p className="mt-2 text-2xl font-bold text-foreground">
-                      ₦{pendingAmount.toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent">
-                    <Clock className="h-6 w-6 text-foreground" />
-                  </div>
-                </div>
-              </Card>
+                </Card>
+              ))}
             </div>
           )}
 
@@ -166,21 +175,25 @@ export default function EarningsPage() {
             </h3>
 
             {isLoading ? (
-              <div className="space-y-4">
+              <LoadingState label="Loading earnings history" className="space-y-4">
                 {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-24 border-3 border-foreground" />
+                  <ListRowSkeleton key={i} />
                 ))}
-              </div>
-            ) : !earnings || earnings.inspections.length === 0 ? (
-              <div className="py-12 text-center">
-                <DollarSign className="mx-auto h-16 w-16 text-muted-foreground" />
-                <h3 className="mt-4 text-xl font-bold text-foreground">
-                  No earnings yet
-                </h3>
-                <p className="mt-2 text-muted-foreground">
-                  Complete inspection jobs to start earning.
-                </p>
-              </div>
+              </LoadingState>
+            ) : error || !earnings ? (
+              <ErrorState
+                title="Earnings history is unavailable"
+                description={error ?? "We couldn't reach the inspections service."}
+                onRetry={fetchEarnings}
+                retryLabel="Retry"
+              />
+            ) : earnings.inspections.length === 0 ? (
+              <EmptyState
+                icon={DollarSign}
+                title="No earnings yet"
+                description="Claim an inspection job and submit your report — approved inspections are paid out here."
+                action={{ label: "Find inspection jobs", href: "/dashboard/inspector" }}
+              />
             ) : (
               <div className="space-y-4">
                 {earnings.inspections.map((inspection) => (
@@ -205,7 +218,11 @@ export default function EarningsPage() {
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <p className="text-lg font-bold text-foreground">
-                          ₦{inspection.fee.toLocaleString()}
+                          <MoneyValue
+                            status="ready"
+                            amount={inspection.fee}
+                            format={formatNaira}
+                          />
                         </p>
                         <Badge className="border-2 border-foreground bg-green-500">
                           Paid

@@ -27,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { MoneyValue } from "@/components/ui/data-state";
 import { LandlordVerificationBadge } from "@/components/LandlordVerificationBadge";
 import { setListingSaved } from "@/lib/savedPropertiesApi";
 import { showErrorToast } from "@/lib/toast";
@@ -309,10 +310,22 @@ export function PropertyCard({
   const priceBlock = showBothPrices ? (
     <>
       <p className="text-xs text-muted-foreground">
-        {formatNgn(property.installmentBasePriceNgn ?? 0)}/yr (installment)
+        <MoneyValue
+          status="ready"
+          amount={property.installmentBasePriceNgn}
+          format={formatNgn}
+          skeletonClassName="h-3 w-20"
+          unavailableLabel="Installment price unavailable"
+        />
+        /yr (installment)
       </p>
       <p className="font-mono text-xl font-black">
-        {formatNgn(property.outrightPriceNgn ?? 0)}{" "}
+        <MoneyValue
+          status="ready"
+          amount={property.outrightPriceNgn}
+          format={formatNgn}
+          unavailableLabel="Outright price unavailable"
+        />{" "}
         <span className="text-xs font-medium text-muted-foreground">outright</span>
       </p>
     </>

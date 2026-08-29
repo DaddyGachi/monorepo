@@ -102,6 +102,8 @@ describe('RealSorobanAdapter', () => {
     stakingPoolId: 'CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBD3Y4',
     stakingRewardsId: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCD4Z5',
     usdcTokenId: 'CDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD5A6',
+    oraclePriceFeedsId: 'CEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEED6B7',
+    stakeDelegationId: 'CFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE7C8',
     adminSecret: 'SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX1',
   }
 
@@ -227,6 +229,151 @@ describe('RealSorobanAdapter', () => {
     })
   })
 
+  describe('getOraclePrice', () => {
+    it('should throw ConfigurationError when oraclePriceFeedsId not set', async () => {
+      const adapterWithoutOracle = new RealSorobanAdapter({
+        ...mockConfig,
+        oraclePriceFeedsId: undefined,
+      })
+
+      await expect(adapterWithoutOracle.getOraclePrice('NGN_USDC')).rejects.toThrow(ConfigurationError)
+    })
+
+    it('should read a PriceFeed struct via get_price', async () => {
+      const { rpc, scValToNative } = await import('@stellar/stellar-sdk')
+
+      vi.mocked(rpc.Api.isSimulationSuccess).mockReturnValue(true)
+      vi.mocked(scValToNative).mockReturnValueOnce({
+        pair: 'NGN_USDC',
+        price: 16_000_000_000n,
+        decimals: 7,
+        updated_at: 1_000,
+        sequence: 3,
+      })
+      mockServer.simulateTransaction.mockResolvedValue({
+        result: { retval: {} },
+      })
+
+      const reading = await adapter.getOraclePrice('NGN_USDC')
+
+      expect(mockServer.simulateTransaction).toHaveBeenCalled()
+      expect(reading).toEqual({ price: 16_000_000_000n, decimals: 7, updatedAt: 1_000, sequence: 3 })
+    })
+
+    it('should wrap simulation failures (e.g. a PriceTooStale revert) in ContractError', async () => {
+      const { rpc } = await import('@stellar/stellar-sdk')
+
+      vi.mocked(rpc.Api.isSimulationSuccess).mockReturnValue(false)
+      vi.mocked(rpc.Api.isSimulationRestore).mockReturnValue(false)
+      mockServer.simulateTransaction.mockResolvedValue({
+        error: 'HostError: Error(Contract, #4)', // ContractError::PriceTooStale
+      })
+
+      await expect(adapter.getOraclePrice('NGN_USDC')).rejects.toThrow(ContractError)
+    })
+  })
+
+  describe('isOraclePriceStale', () => {
+    it('should throw ConfigurationError when oraclePriceFeedsId not set', async () => {
+      const adapterWithoutOracle = new RealSorobanAdapter({
+        ...mockConfig,
+        oraclePriceFeedsId: undefined,
+      })
+
+      await expect(adapterWithoutOracle.isOraclePriceStale('NGN_USDC')).rejects.toThrow(ConfigurationError)
+    })
+
+    it('should return the boolean result of is_stale', async () => {
+      const { rpc, scValToNative } = await import('@stellar/stellar-sdk')
+
+      vi.mocked(rpc.Api.isSimulationSuccess).mockReturnValue(true)
+      vi.mocked(scValToNative).mockReturnValueOnce(true)
+      mockServer.simulateTransaction.mockResolvedValue({
+        result: { retval: {} },
+      })
+
+      await expect(adapter.isOraclePriceStale('NGN_USDC')).resolves.toBe(true)
+    })
+  })
+
+  describe('stake_delegation (#1489)', () => {
+    it('should throw ConfigurationError when stakeDelegationId not set', async () => {
+      const adapterWithoutDelegation = new RealSorobanAdapter({
+        ...mockConfig,
+        stakeDelegationId: undefined,
+      })
+
+      await expect(
+        adapterWithoutDelegation.getDelegations('GABC123'),
+      ).rejects.toThrow(ConfigurationError)
+      await expect(
+        adapterWithoutDelegation.delegateStake('GABC123', 'GDEF456', 1_000_000n),
+      ).rejects.toThrow(ConfigurationError)
+    })
+
+    it('should map get_delegations rows onto DelegationRecord', async () => {
+      const { rpc, scValToNative } = await import('@stellar/stellar-sdk')
+
+      vi.mocked(rpc.Api.isSimulationSuccess).mockReturnValue(true)
+      vi.mocked(scValToNative).mockReturnValueOnce([
+        { delegatee: 'GDEF456', amount: 5_000_000n, activated_epoch: 3 },
+      ])
+      mockServer.simulateTransaction.mockResolvedValue({ result: { retval: {} } })
+
+      const delegations = await adapter.getDelegations('GABC123')
+
+      expect(delegations).toEqual([
+        { delegatee: 'GDEF456', amount: 5_000_000n, activatedEpoch: 3 },
+      ])
+    })
+
+    it('should read the delegation-side staked balance, epoch and claimables', async () => {
+      const { rpc, scValToNative } = await import('@stellar/stellar-sdk')
+
+      vi.mocked(rpc.Api.isSimulationSuccess).mockReturnValue(true)
+      mockServer.simulateTransaction.mockResolvedValue({ result: { retval: {} } })
+
+      vi.mocked(scValToNative).mockReturnValueOnce(12_000_000n)
+      await expect(adapter.getDelegationStakedBalance('GABC123')).resolves.toBe(12_000_000n)
+
+      vi.mocked(scValToNative).mockReturnValueOnce(7)
+      await expect(adapter.getDelegationEpoch()).resolves.toBe(7)
+
+      vi.mocked(scValToNative).mockReturnValueOnce(900_000n)
+      await expect(adapter.getDelegateeClaimable('GDEF456')).resolves.toBe(900_000n)
+
+      vi.mocked(scValToNative).mockReturnValueOnce(100_000n)
+      await expect(adapter.getDelegateeCommissionClaimable('GDEF456')).resolves.toBe(100_000n)
+    })
+
+    it('should submit writes through the admin signing service', async () => {
+      const executeSpy = vi
+        .spyOn((adapter as any).adminSigningService, 'executeAdminOperation')
+        .mockResolvedValue('tx_hash_delegation')
+
+      await expect(
+        adapter.delegateStake('GABC123', 'GDEF456', 5_000_000n),
+      ).resolves.toBe('tx_hash_delegation')
+      await adapter.requestUndelegate('GABC123', 'GDEF456', 2_000_000n)
+      await adapter.completeUndelegate('GABC123', 'GDEF456')
+      await adapter.claimDelegateeRewards('GDEF456')
+      await adapter.setDelegateeCommission('GDEF456', 1_000)
+      await adapter.claimDelegateeCommission('GDEF456')
+
+      expect(executeSpy.mock.calls.map((call) => call[0].operation)).toEqual([
+        'delegate',
+        'request_undelegate',
+        'complete_undelegate',
+        'claim_delegatee_rewards',
+        'set_commission',
+        'claim_commission',
+      ])
+      for (const call of executeSpy.mock.calls) {
+        expect(call[0].contractId).toBe(mockConfig.stakeDelegationId)
+      }
+    })
+  })
+
   describe('recordReceipt', () => {
     it('should throw ConfigurationError when contractId not set', async () => {
       const adapterWithoutContract = new RealSorobanAdapter({
@@ -285,6 +432,63 @@ describe('RealSorobanAdapter', () => {
       expect(invokeSpy).toHaveBeenCalledTimes(1)
       const [contractId, method, args] = invokeSpy.mock.calls[0]
       expect(contractId).toBe(mockConfig.contractId)
+      expect(method).toBe('record_receipt')
+      expect(Array.isArray(args)).toBe(true)
+      expect(args.length).toBe(1)
+    })
+
+    it('should use transactionReceiptId when configured for recordReceipt', async () => {
+      const configWithTransactionReceipt = {
+        ...mockConfig,
+        transactionReceiptId: 'CTRX...',
+        contractId: mockConfig.contractId,
+      }
+      const adapterWithTransactionReceipt = new RealSorobanAdapter(configWithTransactionReceipt)
+
+      const invokeSpy = vi
+        .spyOn(adapterWithTransactionReceipt as any, 'invokeTransaction')
+        .mockResolvedValue(undefined)
+
+      await adapterWithTransactionReceipt.recordReceipt({
+        txId: 'abc123def456',
+        txType: TxType.TENANT_REPAYMENT,
+        amountUsdc: '100.00',
+        tokenAddress: 'CDUSDC...',
+        dealId: 'deal-123',
+        externalRefSource: 'paystack',
+        externalRef: 'ref-123',
+      })
+
+      expect(invokeSpy).toHaveBeenCalledTimes(1)
+      const [contractId, method, args] = invokeSpy.mock.calls[0]
+      expect(contractId).toBe(configWithTransactionReceipt.transactionReceiptId)
+      expect(method).toBe('record_receipt')
+      expect(Array.isArray(args)).toBe(true)
+      expect(args.length).toBe(1)
+    })
+
+    it('should fall back to contractId when transactionReceiptId is not configured', async () => {
+      const configWithoutTransactionReceipt = {
+        ...mockConfig,
+        transactionReceiptId: undefined,
+      }
+      const adapterWithoutTransactionReceipt = new RealSorobanAdapter(configWithoutTransactionReceipt)
+
+      const invokeSpy = vi
+        .spyOn(adapterWithoutTransactionReceipt as any, 'invokeTransaction')
+        .mockResolvedValue(undefined)
+
+      await adapterWithoutTransactionReceipt.recordReceipt({
+        txId: 'abc123def456',
+        txType: TxType.TENANT_REPAYMENT,
+        amountUsdc: '100.00',
+        tokenAddress: 'CDUSDC...',
+        dealId: 'deal-123',
+      })
+
+      expect(invokeSpy).toHaveBeenCalledTimes(1)
+      const [contractId, method, args] = invokeSpy.mock.calls[0]
+      expect(contractId).toBe(configWithoutTransactionReceipt.contractId)
       expect(method).toBe('record_receipt')
       expect(Array.isArray(args)).toBe(true)
       expect(args.length).toBe(1)

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { join, dirname } from 'path'
 import { createRequire } from 'module'
 import { parse } from 'yaml'
+import type { SwaggerUiOptions } from 'swagger-ui-express'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -28,7 +29,7 @@ try {
   console.warn('[docs] swagger-ui-express not available, docs UI disabled')
 }
 
-const uiOptions: SwaggerUiModule['SwaggerUiOptions'] = {
+const uiOptions: SwaggerUiOptions = {
   customSiteTitle: 'ShelterFlex API Docs',
   swaggerOptions: {
     persistAuthorization: true,

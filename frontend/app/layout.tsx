@@ -16,10 +16,18 @@ import { FeatureFlagProvider } from '@/lib/featureFlags'
 import { WalletProvider } from '@/contexts/WalletContext'
 import { CookieConsentProvider } from '@/contexts/CookieConsentContext'
 import { CookieConsentBanner } from '@/components/CookieConsentBanner'
+import { AnalyticsTracker } from '@/components/AnalyticsTracker'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import { NextIntlClientProvider } from "next-intl"
 import { locales, defaultLocale, rtlLocales, type Locale } from "@/i18n"
+import {
+  DEFAULT_DESCRIPTION,
+  DEFAULT_OG_IMAGE,
+  DEFAULT_TITLE,
+  SITE_NAME,
+  SITE_URL,
+} from "@/lib/seo"
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -32,13 +40,36 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Shelterflex - Rent Now, Pay Later',
-  description: 'The smarter way to pay your rent. Split your rent payments into affordable monthly installments.',
+  // metadataBase makes every relative canonical/OpenGraph URL below resolve to
+  // an absolute one, which is what crawlers and link unfurlers require.
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: DEFAULT_TITLE,
+    // Per-route titles read as "<page> | Shelterflex" without repeating the
+    // suffix in every route's metadata export.
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: DEFAULT_DESCRIPTION,
+  applicationName: SITE_NAME,
   manifest: '/manifest.json',
   icons: {
     icon: '/icon.svg',
     shortcut: '/icon.svg',
     apple: '/icon.svg',
+  },
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
+    url: SITE_URL,
+    images: [{ url: DEFAULT_OG_IMAGE, alt: SITE_NAME }],
+  },
+  twitter: {
+    card: 'summary',
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
+    images: [DEFAULT_OG_IMAGE],
   },
 }
 
@@ -74,6 +105,7 @@ export default async function RootLayout({
                 <ServiceWorkerRegister />
                 <SpeedInsights />
                 <PerformanceMonitor />
+                <AnalyticsTracker />
                 <NetworkStatusBanner />
                 <SkipLink />
                 <Header />

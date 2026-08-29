@@ -1,5 +1,9 @@
 # Contract Upgrade Process (Soroban)
 
+> **Governance summary.** For the ordered procedure — including WASM hash
+> verification, what the timelock delay is for, and what can and cannot be
+> rolled back — see [`RUNBOOK.md`](./RUNBOOK.md).
+
 ## Overview
 - Contributors can **deploy** new contract instances.
 - Only the **multisig admin** (maintainers) can **upgrade** existing contracts.

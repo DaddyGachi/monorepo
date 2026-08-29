@@ -259,8 +259,11 @@ export default function ReconciliationDashboard() {
 
       <main className="container mx-auto px-4 py-8">
         {/* Custom Tabs */}
-        <div className="mb-6 flex flex-wrap gap-2 md:gap-4">
+        <nav aria-label="Reconciliation sections">
+          <div className="mb-6 flex flex-wrap gap-2 md:gap-4" role="tablist">
           <button
+            role="tab"
+            aria-selected={activeTab === "deposits"}
             onClick={() => setActiveTab("deposits")}
             className={`flex items-center gap-2 border-3 border-foreground px-3 py-2 text-sm font-bold transition-all md:px-6 md:py-3 md:text-base ${
               activeTab === "deposits"
@@ -268,10 +271,12 @@ export default function ReconciliationDashboard() {
                 : "bg-card hover:bg-muted"
             }`}
           >
-            <FileText className="h-4 w-4" />
+            <FileText className="h-4 w-4" aria-hidden="true" />
             Deposits
           </button>
           <button
+            role="tab"
+            aria-selected={activeTab === "conversions"}
             onClick={() => setActiveTab("conversions")}
             className={`flex items-center gap-2 border-3 border-foreground px-3 py-2 text-sm font-bold transition-all md:px-6 md:py-3 md:text-base ${
               activeTab === "conversions"
@@ -279,10 +284,12 @@ export default function ReconciliationDashboard() {
                 : "bg-card hover:bg-muted"
             }`}
           >
-            <ArrowRightLeft className="h-4 w-4" />
+            <ArrowRightLeft className="h-4 w-4" aria-hidden="true" />
             Conversions
           </button>
           <button
+            role="tab"
+            aria-selected={activeTab === "outbox"}
             onClick={() => setActiveTab("outbox")}
             className={`flex items-center gap-2 border-3 border-foreground px-3 py-2 text-sm font-bold transition-all md:px-6 md:py-3 md:text-base ${
               activeTab === "outbox"
@@ -290,10 +297,11 @@ export default function ReconciliationDashboard() {
                 : "bg-card hover:bg-muted"
             }`}
           >
-            <Inbox className="h-4 w-4" />
+            <Inbox className="h-4 w-4" aria-hidden="true" />
             Outbox
           </button>
-        </div>
+          </div>
+        </nav>
 
         {/* Deposits Tab */}
         {activeTab === "deposits" && (
@@ -341,12 +349,13 @@ export default function ReconciliationDashboard() {
               </div>
               <div className="flex items-center gap-2">
                 <div className="border-3 border-foreground bg-card p-2">
-                  <p className="text-xs font-bold mb-2 block">Filter Status</p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <p className="text-xs font-bold mb-2 block" id="outbox-filter-label">Filter Status</p>
+                  <div className="grid grid-cols-2 gap-2" role="group" aria-labelledby="outbox-filter-label">
                     {(["all", "pending", "sent", "failed"] as OutboxStatus[]).map((status) => (
                       <button
                         key={status}
                         onClick={() => setOutboxStatusFilter(status)}
+                        aria-pressed={outboxStatusFilter === status}
                         className={`border-2 border-foreground p-2 text-xs font-bold transition-all ${
                           outboxStatusFilter === status
                             ? "bg-primary shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
@@ -362,9 +371,10 @@ export default function ReconciliationDashboard() {
                   variant="outline"
                   size="sm"
                   onClick={fetchOutboxItems}
+                  aria-label="Refresh outbox items"
                   className="border-3 border-foreground bg-background font-bold shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
                 >
-                  <RefreshCw className="h-4 w-4" />
+                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
                 </Button>
                 {outboxStatusFilter === "failed" && (
                   <Button

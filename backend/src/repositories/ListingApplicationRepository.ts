@@ -10,6 +10,7 @@ import {
   ListingApplicationStatus,
   CreateListingApplicationInput,
   PaymentPlan,
+  RtiAssessment,
 } from "../models/listingApplication.js";
 
 export interface IListingApplicationRepository {
@@ -32,15 +33,25 @@ export interface IListingApplicationRepository {
     status: ListingApplicationStatus,
     reviewedBy?: string,
     reviewerNotes?: string,
+    rtiAssessment?: RtiAssessment,
   ): Promise<ListingApplication | null>;
   withdraw(id: string): Promise<ListingApplication | null>;
+  getListingLandlordId(listingId: string): Promise<string | null>;
 }
 
 class PostgresListingApplicationRepository implements IListingApplicationRepository {
+  // In-memory map to store RTI assessments until database migration is added
+  private rtiAssessmentStore = new Map<string, RtiAssessment>();
+
   async create(
     input: CreateListingApplicationInput,
   ): Promise<ListingApplication> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error(
+        "Database pool is not available (DATABASE_URL/pg not configured)",
+      );
+    }
     const id = randomUUID();
     const now = new Date();
 
@@ -71,7 +82,12 @@ class PostgresListingApplicationRepository implements IListingApplicationReposit
   }
 
   async findById(id: string): Promise<ListingApplication | null> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error(
+        "Database pool is not available (DATABASE_URL/pg not configured)",
+      );
+    }
 
     const query = `
       SELECT id, listing_id, tenant_id, landlord_id, status, cover_note, preferred_start_date,
@@ -81,14 +97,25 @@ class PostgresListingApplicationRepository implements IListingApplicationReposit
     `;
 
     const result = await pool.query(query, [id]);
-    return result.rows.length > 0 ? this.mapRow(result.rows[0]) : null;
+    if (result.rows.length === 0) return null;
+
+    const app = this.mapRow(result.rows[0]);
+    if (this.rtiAssessmentStore.has(id)) {
+      app.rtiAssessment = this.rtiAssessmentStore.get(id);
+    }
+    return app;
   }
 
   async findByTenantId(
     tenantId: string,
     filters?: { status?: ListingApplicationStatus },
   ): Promise<ListingApplication[]> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error(
+        "Database pool is not available (DATABASE_URL/pg not configured)",
+      );
+    }
 
     let query = `
       SELECT id, listing_id, tenant_id, landlord_id, status, cover_note, preferred_start_date,
@@ -114,7 +141,12 @@ class PostgresListingApplicationRepository implements IListingApplicationReposit
     listingId: string,
     filters?: { status?: ListingApplicationStatus },
   ): Promise<ListingApplication[]> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error(
+        "Database pool is not available (DATABASE_URL/pg not configured)",
+      );
+    }
 
     let query = `
       SELECT id, listing_id, tenant_id, landlord_id, status, cover_note, preferred_start_date,
@@ -140,7 +172,12 @@ class PostgresListingApplicationRepository implements IListingApplicationReposit
     tenantId: string,
     listingId: string,
   ): Promise<ListingApplication | null> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error(
+        "Database pool is not available (DATABASE_URL/pg not configured)",
+      );
+    }
 
     const query = `
       SELECT id, listing_id, tenant_id, landlord_id, status, cover_note, preferred_start_date,
@@ -164,8 +201,14 @@ class PostgresListingApplicationRepository implements IListingApplicationReposit
     status: ListingApplicationStatus,
     reviewedBy?: string,
     reviewerNotes?: string,
+    rtiAssessment?: RtiAssessment,
   ): Promise<ListingApplication | null> {
-    const pool = getPool();
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error(
+        "Database pool is not available (DATABASE_URL/pg not configured)",
+      );
+    }
     const now = new Date();
 
     const query = `
@@ -184,11 +227,39 @@ class PostgresListingApplicationRepository implements IListingApplicationReposit
       reviewerNotes || null,
       now,
     ]);
-    return result.rows.length > 0 ? this.mapRow(result.rows[0]) : null;
+
+    if (result.rows.length > 0 && rtiAssessment) {
+      // Store RTI assessment in memory for now
+      this.rtiAssessmentStore.set(id, rtiAssessment);
+    }
+
+    const app = result.rows.length > 0 ? this.mapRow(result.rows[0]) : null;
+    if (app && this.rtiAssessmentStore.has(id)) {
+      app.rtiAssessment = this.rtiAssessmentStore.get(id);
+    }
+    return app;
   }
 
   async withdraw(id: string): Promise<ListingApplication | null> {
     return this.updateStatus(id, ListingApplicationStatus.WITHDRAWN);
+  }
+
+  async getListingLandlordId(listingId: string): Promise<string | null> {
+    const pool = await getPool();
+    if (!pool) {
+      throw new Error(
+        "Database pool is not available (DATABASE_URL/pg not configured)",
+      );
+    }
+
+    const query = `
+      SELECT whistleblower_id
+      FROM whistleblower_listings
+      WHERE listing_id = $1
+    `;
+
+    const result = await pool.query(query, [listingId]);
+    return result.rows.length > 0 ? result.rows[0].whistleblower_id : null;
   }
 
   private mapRow(row: any): ListingApplication {

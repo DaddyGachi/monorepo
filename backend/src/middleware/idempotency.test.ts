@@ -150,6 +150,78 @@ describe('idempotency middleware', () => {
     await firstDone
     expect(getCallCount()).toBe(1)
   })
+
+  it('replays failed response without re-executing', async () => {
+    const { app, getCallCount } = buildApp(store, (_req, res) => {
+      res.status(400).json({ error: 'Invalid input' })
+    })
+
+    const first = await supertest(app)
+      .post('/test')
+      .set('Idempotency-Key', KEY_1)
+      .send({})
+
+    expect(first.status).toBe(400)
+    expect(first.body.error).toBe('Invalid input')
+    expect(getCallCount()).toBe(1)
+
+    const second = await supertest(app)
+      .post('/test')
+      .set('Idempotency-Key', KEY_1)
+      .send({})
+
+    expect(second.status).toBe(400)
+    expect(second.body.error).toBe('Invalid input')
+    expect(second.headers['x-idempotent-replay']).toBe('true')
+    expect(getCallCount()).toBe(1) // Handler was NOT called again
+  })
+
+  it('replays 500 error response without re-executing', async () => {
+    const { app, getCallCount } = buildApp(store, (_req, res) => {
+      res.status(500).json({ error: 'Internal server error' })
+    })
+
+    const first = await supertest(app)
+      .post('/test')
+      .set('Idempotency-Key', KEY_1)
+      .send({})
+
+    expect(first.status).toBe(500)
+    expect(first.body.error).toBe('Internal server error')
+    expect(getCallCount()).toBe(1)
+
+    const second = await supertest(app)
+      .post('/test')
+      .set('Idempotency-Key', KEY_1)
+      .send({})
+
+    expect(second.status).toBe(500)
+    expect(second.body.error).toBe('Internal server error')
+    expect(second.headers['x-idempotent-replay']).toBe('true')
+    expect(getCallCount()).toBe(1) // Handler was NOT called again
+  })
+
+  it('returns 409 when same key is used with different payload', async () => {
+    const { app, getCallCount } = buildApp(store)
+
+    const first = await supertest(app)
+      .post('/test')
+      .set('Idempotency-Key', KEY_1)
+      .send({ amount: 100 })
+
+    expect(first.status).toBe(201)
+    expect(getCallCount()).toBe(1)
+
+    const second = await supertest(app)
+      .post('/test')
+      .set('Idempotency-Key', KEY_1)
+      .send({ amount: 200 }) // Different payload
+
+    expect(second.status).toBe(409)
+    expect(second.body.error.code).toBe('CONFLICT')
+    expect(second.body.error.message).toContain('different request payload')
+    expect(getCallCount()).toBe(1) // Handler was NOT called again
+  })
 })
 
 describe('InMemoryIdempotencyStore', () => {

@@ -2,6 +2,13 @@
 
 Node.js backend for Shelterflex.
 
+## API Consistency Notes
+
+- List endpoints should paginate consistently (cursor-based preferred for time-ordered or frequently-changing data), enforce a maximum page size, and return consistent pagination metadata.
+- Error responses should use the shared `AppError` / `ErrorCode` contract in `src/errors/` so every failure class (unauthenticated, forbidden, not found, validation, conflict, rate limited, server error) is distinguishable and never leaks internals in production.
+- Request bodies, query parameters, and path parameters should be validated via schemas in `src/schemas/` applied through the `validate` middleware, with explicit handling of unexpected extra fields.
+- `docs/openapi.yml` should be kept in sync with the mounted route surface so it accurately reflects what the server serves.
+
 ## Setup
 
 > **Package manager:** This project uses **npm**. Use `npm ci` (not `pnpm`) to match the lockfile and CI workflow.

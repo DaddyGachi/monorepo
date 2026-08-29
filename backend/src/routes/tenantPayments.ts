@@ -15,6 +15,7 @@ import { ngnTopupInitiateSchema, ngnTopupInitiateResponseSchema } from "../schem
 import type { NgnTopupInitiateRequest } from "../schemas/ngnTopup.js";
 import { initiateNgnTopup } from "../services/ngnTopupInitiateService.js";
 import { generateId } from "../utils/tokens.js";
+import { logger } from "../utils/logger.js";
 
 const router = Router();
 const ngnWalletService = new NgnWalletService();
@@ -435,6 +436,11 @@ router.post(
 
       const { paymentDisputeRepository } = await import('../repositories/PaymentDisputeRepository.js')
       const dispute = await paymentDisputeRepository.create(userId, parsed.data)
+
+      const { enqueueChallengeRentRelease } = await import('../services/disputes/rentReleaseSync.js')
+      enqueueChallengeRentRelease(dispute).catch((err) =>
+        logger.error('Failed to enqueue challenge_rent_release for dispute:', err),
+      )
 
       res.status(201).json({
         success: true,

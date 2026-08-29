@@ -10,6 +10,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/ui/data-state";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -232,30 +238,45 @@ export default function LandlordPayoutSchedulePage() {
 
           {/* Timeline */}
           {loading ? (
-            <div className="space-y-4" role="status" aria-label="Loading payout schedule">
-              <p className="sr-only">Loading payout schedule...</p>
+            <LoadingState label="Loading payout schedule" className="space-y-4">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Card key={i} className="animate-pulse border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-                  <div className="h-6 w-32 bg-muted rounded" />
-                  <div className="mt-4 h-4 w-48 bg-muted rounded" />
+                <Card key={i} className="border-3 border-foreground p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
+                  <Skeleton className="h-6 w-32" />
+                  <Skeleton className="mt-4 h-4 w-48" />
                 </Card>
               ))}
-            </div>
+            </LoadingState>
           ) : error ? (
-            <Card className="border-3 border-destructive p-6 text-center" role="alert">
-              <p className="mt-4 font-bold text-destructive">{error}</p>
-              <Button onClick={fetchData} className="mt-4 border-2 border-foreground font-bold" aria-label="Retry loading payout schedule">
-                Retry
-              </Button>
-            </Card>
+            <ErrorState
+              title="Payout schedule is unavailable"
+              description={error}
+              onRetry={fetchData}
+              retryLabel="Retry"
+            />
           ) : periods.length === 0 ? (
-            <Card className="border-3 border-foreground p-8 text-center shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
-              <BarChart3 className="mx-auto h-16 w-16 text-muted-foreground" aria-hidden="true" />
-              <p className="mt-4 text-lg font-bold">No payouts scheduled</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {statusFilter || channelFilter ? "Try adjusting your filters" : "Payouts will appear here once scheduled"}
-              </p>
-            </Card>
+            <EmptyState
+              icon={BarChart3}
+              title="No payouts scheduled"
+              description={
+                statusFilter || channelFilter
+                  ? "No payout periods match these filters. Clearing them shows your full schedule."
+                  : "Payouts appear here once a tenant pays rent on one of your properties. Add a payout account so we can send funds the moment they clear."
+              }
+              action={
+                statusFilter || channelFilter
+                  ? {
+                      label: "Clear filters",
+                      onClick: () => {
+                        setStatusFilter("");
+                        setChannelFilter("");
+                      },
+                    }
+                  : {
+                      label: "Set up payouts",
+                      href: "/dashboard/landlord/settings/payouts",
+                    }
+              }
+            />
           ) : (
             <div className="space-y-4" role="list" aria-label="Payout periods">
               {periods.map((period) => (

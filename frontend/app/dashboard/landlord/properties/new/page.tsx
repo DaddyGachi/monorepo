@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { PropertyListingForm } from "@/components/landlord/property-listing-form";
+import { CollaborativeDraftEditor } from "@/components/properties/CollaborativeDraftEditor";
 import { createLandlordProperty } from "@/lib/landlordPropertiesApi";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
+import useAuthStore from "@/store/useAuthStore";
 
 export default function NewPropertyPage() {
   const router = useRouter();
+  const user = useAuthStore((state) => state.user);
 
   return (
     <div className="min-h-screen bg-background pt-20">
@@ -24,6 +27,16 @@ export default function NewPropertyPage() {
         <p className="mb-8 text-muted-foreground">
           Complete all sections — at least 3 photos and valid pricing are required.
         </p>
+
+        {user && (
+          <div className="mb-8">
+            <CollaborativeDraftEditor
+              draftId="new"
+              currentUserId={user.id}
+              currentUserName={user.name || "Landlord"}
+            />
+          </div>
+        )}
 
         <PropertyListingForm
           mode="create"

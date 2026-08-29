@@ -15,10 +15,10 @@ export class PaymentDisputeRepository {
     const evidenceKeys = data.evidenceKeys ?? []
 
     const { rows } = await pool.query(
-      `INSERT INTO payment_disputes (user_id, payment_id, reason, description, evidence_keys, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending')
+      `INSERT INTO payment_disputes (user_id, payment_id, deal_id, reason, description, evidence_keys, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending')
        RETURNING *`,
-      [userId, data.paymentId, data.reason, data.description, evidenceKeys],
+      [userId, data.paymentId, data.dealId, data.reason, data.description, evidenceKeys],
     )
 
     return this.mapRowToDispute(rows[0])
@@ -125,6 +125,7 @@ export class PaymentDisputeRepository {
       id: row.id as string,
       userId: row.user_id as string,
       paymentId: row.payment_id as string,
+      dealId: (row.deal_id as string | null) ?? null,
       reason: row.reason as any,
       description: row.description as string,
       evidenceKeys: (row.evidence_keys as string[]) ?? [],

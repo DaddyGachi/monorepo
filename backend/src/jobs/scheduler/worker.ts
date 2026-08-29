@@ -2,6 +2,8 @@ import { logger } from '../../utils/logger.js'
 import { JobStatus, JobRunStatus, type ScheduledJob, type JobHandler, type CreateJobInput } from './types.js'
 import { getJobStore } from './store.js'
 import { getNextCronTime } from './cron.js'
+import { observeJobRun, jobRecordsProcessedTotal } from '../jobObservability.js'
+import { getRequestContext } from '../../request-context.js'
 
 const BASE_BACKOFF_MS = 1000
 const MAX_BACKOFF_MS = 60 * 60 * 1000 // 1 hour
@@ -85,10 +87,15 @@ export class JobScheduler {
   }
 
   async tick(): Promise<void> {
-    const dueJobs = await getJobStore().listDue()
-    for (const job of dueJobs) {
-      await this.executeJob(job)
-    }
+    // Observed so a scheduler that has silently stopped ticking shows up as an
+    // absence (job_overdue{job="scheduler"}) rather than as nothing at all.
+    await observeJobRun('scheduler', async () => {
+      const dueJobs = await getJobStore().listDue()
+      for (const job of dueJobs) {
+        await this.executeJob(job)
+      }
+      return { recordsProcessed: dueJobs.length }
+    })
   }
 
   private async executeJob(job: ScheduledJob): Promise<void> {
@@ -127,8 +134,14 @@ export class JobScheduler {
       workerId: this.workerId,
     })
 
+    const runStartedAt = Date.now()
     try {
-      await handler(job)
+      const outcome = await handler(job)
+      const recordsProcessed =
+        outcome && typeof outcome.recordsProcessed === 'number' ? outcome.recordsProcessed : null
+      if (recordsProcessed !== null && recordsProcessed > 0) {
+        jobRecordsProcessedTotal.inc({ job: job.handler }, recordsProcessed)
+      }
 
       // For recurring jobs, compute and set the next run time from the cron expression
       let nextRunAt: Date | undefined
@@ -149,6 +162,9 @@ export class JobScheduler {
         recurring: !!nextRunAt,
         nextRunAt,
         workerId: this.workerId,
+        durationMs: Date.now() - runStartedAt,
+        recordsProcessed,
+        correlationId: getRequestContext()?.requestId ?? null,
       })
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err)
@@ -159,6 +175,8 @@ export class JobScheduler {
         retryCount: job.retryCount,
         maxRetries: job.maxRetries,
         workerId: this.workerId,
+        durationMs: Date.now() - runStartedAt,
+        correlationId: getRequestContext()?.requestId ?? null,
       })
 
       await store.releaseLease(job.id, this.workerId)

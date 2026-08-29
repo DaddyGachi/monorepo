@@ -29,6 +29,8 @@ import { recordDealActivationDuration } from '../metrics.js'
 import { applyDealRepaymentMethod } from '../services/salaryDeductionService.js'
 import { updateDealRepaymentSchema } from '../schemas/employer.js'
 import { idempotency } from '../middleware/idempotency.js'
+import { dealStateMachine } from '../services/deals/DealStateMachine.js'
+import { wouldExceedEquityCap } from '../services/deals/rentToOwnConversion.js'
 
 const router = Router()
 
@@ -113,6 +115,10 @@ router.post('/', idempotency(), async (req: Request, res: Response, next) => {
     
     const deal = await dealStore.create(validatedData as any)
 
+    dealStateMachine
+      .enqueueRentToOwnRegistration(deal)
+      .catch((err) => logger.error('Failed to enqueue rent_to_own registration:', err))
+
     if (validatedData.repaymentMethod === 'salary_deduction') {
       await applyDealRepaymentMethod(deal.dealId, 'salary_deduction', {
         employerId: validatedData.employerId,
@@ -160,8 +166,10 @@ router.get('/:dealId/progress', async (req: Request, res: Response, next) => {
 
     // Fetch all outbox items for this deal filtered to TENANT_REPAYMENT
     const receipts = await outboxStore.listByDealId(dealId, TxType.TENANT_REPAYMENT)
+    // Contract-confirmed rent_to_own equity payments (only SENT = confirmed on-chain)
+    const equityPayments = await outboxStore.listByDealId(dealId, TxType.RENT_TO_OWN_EQUITY_PAYMENT)
 
-    const progress = computeDealProgress(deal, receipts)
+    const progress = computeDealProgress(deal, receipts, equityPayments)
 
     res.json({
       success: true,
@@ -339,17 +347,46 @@ router.patch('/:dealId/schedule/:period', async (req: Request, res: Response, ne
       ...req.body,
       period
     })
-    
+
+    let targetItem: { period: number; amountNgn: number } | undefined
+    if (validatedData.status === 'paid') {
+      const existingDeal = await dealStore.findById(dealId)
+      if (!existingDeal) {
+        throw new AppError(ErrorCode.NOT_FOUND, 404, `Deal with ID ${dealId} not found`)
+      }
+      targetItem = existingDeal.schedule.find((item) => item.period === validatedData.period)
+      if (!targetItem) {
+        throw new AppError(
+          ErrorCode.NOT_FOUND,
+          404,
+          `Schedule period ${validatedData.period} not found for deal ${dealId}`
+        )
+      }
+      if (wouldExceedEquityCap(existingDeal, existingDeal.schedule, targetItem.amountNgn)) {
+        throw new AppError(
+          ErrorCode.EQUITY_OVERFLOW,
+          409,
+          `Recording this payment would push accumulated rent-to-own equity over the property value for deal ${dealId}`
+        )
+      }
+    }
+
     const deal = await dealStore.updateScheduleItemStatus(
-      dealId, 
-      validatedData.period, 
+      dealId,
+      validatedData.period,
       validatedData.status as any
     )
-    
+
     if (!deal) {
       throw new AppError(ErrorCode.NOT_FOUND, 404, `Deal with ID ${dealId} not found`)
     }
-    
+
+    if (validatedData.status === 'paid' && targetItem) {
+      dealStateMachine
+        .enqueueRentToOwnEquityPayment(deal, targetItem)
+        .catch((err) => logger.error('Failed to enqueue rent_to_own equity payment:', err))
+    }
+
     res.json({
       success: true,
       data: deal

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import express from 'express'
 import supertest, { type Response } from 'supertest'
 import { createBalanceRouter } from './balance.js'
@@ -15,6 +15,22 @@ import { ErrorCode } from '../errors/errorCodes.js'
 import { RawReceiptEvent } from '../indexer/event-parser.js'
 import { SorobanConfig } from '../soroban/client.js'
 import { RecordReceiptParams } from '../soroban/adapter.js'
+
+// Mock auth middleware for balance routes
+vi.mock('../middleware/auth.js', () => ({
+  authenticateToken: (req: any, res: any, next: any) => {
+    req.user = {
+      id: 'test-user',
+      email: 'test@example.com',
+      name: 'Test User',
+      role: 'tenant',
+    }
+    next()
+  },
+  requirePermission: (resource: string, action: string) => (req: any, res: any, next: any) => {
+    next()
+  },
+}))
 
 const SAFE_MESSAGE =
   'The blockchain is temporarily unavailable. Please try again shortly.'
@@ -128,13 +144,13 @@ describe('chain-dependent routes when Soroban RPC is unavailable', () => {
         enabled: true,
         failureThreshold: 1,
         timeoutPeriod: 60_000,
-        halfOpenMaxRequests: 1,
+        halfOpenTestRequests: 1,
       })
 
-      await expect(adapter.getBalance('GABC')).rejects.toThrow()
+      await expect(adapter.getBalance('test-user')).rejects.toThrow()
       const app = buildBalanceApp(adapter)
 
-      const res = await supertest(app).get('/api/balance/GABC')
+      const res = await supertest(app).get('/api/balance/test-user')
       expectChainUnavailableResponse(res)
     })
 
@@ -143,7 +159,7 @@ describe('chain-dependent routes when Soroban RPC is unavailable', () => {
       adapter.simulateRpcTimeout()
       const app = buildBalanceApp(adapter)
 
-      const res = await supertest(app).get('/api/balance/GABC')
+      const res = await supertest(app).get('/api/balance/test-user')
       expectChainUnavailableResponse(res)
     })
   })

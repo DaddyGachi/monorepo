@@ -9,6 +9,10 @@ vi.mock('../soroban/real-adapter.js', () => {
   const RealSorobanAdapter = vi.fn()
   RealSorobanAdapter.prototype.getStakedBalance = vi.fn()
   RealSorobanAdapter.prototype.getClaimableRewards = vi.fn()
+  RealSorobanAdapter.prototype.mvpStakedBalance = vi.fn()
+  RealSorobanAdapter.prototype.usedStake = vi.fn()
+  RealSorobanAdapter.prototype.unusedStake = vi.fn()
+  RealSorobanAdapter.prototype.claimable = vi.fn()
   RealSorobanAdapter.prototype.getReceiptEvents = vi.fn().mockResolvedValue([])
   RealSorobanAdapter.prototype.getConfig = vi.fn().mockReturnValue({})
   return { RealSorobanAdapter }
@@ -64,5 +68,25 @@ describe('Staking Position (Real Adapter)', () => {
 
     expect(response.body.error).toBeDefined()
     expect(response.body.error.message).toBe('Chain error')
+  })
+
+  it('should return the MVP used and unused stake split', async () => {
+    vi.spyOn(RealSorobanAdapter.prototype, 'mvpStakedBalance').mockResolvedValue(123000000n)
+    vi.spyOn(RealSorobanAdapter.prototype, 'usedStake').mockResolvedValue(23000000n)
+    vi.spyOn(RealSorobanAdapter.prototype, 'unusedStake').mockResolvedValue(100000000n)
+    vi.spyOn(RealSorobanAdapter.prototype, 'claimable').mockResolvedValue(4560000n)
+
+    const response = await request(app)
+      .get('/api/staking/mvp-position')
+      .set('Authorization', `Bearer ${authToken}`)
+      .set('x-wallet-address', walletAddress)
+      .expect(200)
+
+    expect(response.body.position).toEqual({
+      staked: '123.000000',
+      used: '23.000000',
+      unused: '100.000000',
+      claimable: '4.560000',
+    })
   })
 })

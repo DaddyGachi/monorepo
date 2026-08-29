@@ -14,7 +14,7 @@ const reportService = new ComplianceReportService()
 export function createComplianceReportRouter() {
   const router = Router()
 
-  function requireComplianceRole(req: Request): AuthenticatedRequest {
+  function requireComplianceRole(req: Request): NonNullable<AuthenticatedRequest['user']> {
     const user = (req as any).user
     if (!user) {
       throw new AppError(ErrorCode.UNAUTHORIZED, 401, 'Authentication required')

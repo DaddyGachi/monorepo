@@ -29,6 +29,7 @@ export interface WebhookDeliveryLog {
   status: 'delivered' | 'failed' | 'permanently_failed'
   responseCode?: number
   responseBody?: string
+  requestId?: string
   attemptedAt: Date
 }
 

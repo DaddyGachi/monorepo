@@ -800,6 +800,61 @@ export function createStakingRouter(
     },
   )
 
+  /**
+   * GET /api/staking/mvp-position
+   *
+   * Reads the additive MVP pool. Unlike the legacy position endpoint, this
+   * exposes the stake partition enforced by mvp_staking_pool.
+   */
+  router.get(
+    '/mvp-position',
+    authenticateToken,
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+      try {
+        const userId = req.user?.id
+        if (!userId) {
+          throw new AppError(ErrorCode.UNAUTHORIZED, 401, 'Authentication required')
+        }
+        if (!adapter.mvpStakedBalance || !adapter.usedStake || !adapter.unusedStake || !adapter.claimable) {
+          throw new AppError(ErrorCode.SERVICE_UNAVAILABLE, 503, 'MVP staking pool is not available')
+        }
+
+        const accountHeader = req.headers['x-wallet-address']
+        let account: string
+        if (typeof accountHeader === 'string' && accountHeader.length > 0) {
+          account = accountHeader
+        } else if (env.CUSTODIAL_MODE_ENABLED) {
+          account = await walletService.getPublicAddress(userId)
+        } else {
+          const linked = await linkedAddressStore.getLinkedAddress(userId)
+          if (!linked) {
+            throw new AppError(ErrorCode.VALIDATION_ERROR, 400, 'No linked wallet address found for user')
+          }
+          account = linked
+        }
+
+        const [total, used, unused, claimable] = await Promise.all([
+          adapter.mvpStakedBalance(account),
+          adapter.usedStake(account),
+          adapter.unusedStake(account),
+          adapter.claimable(account),
+        ])
+
+        res.status(200).json({
+          success: true,
+          position: {
+            staked: formatAmount6(total),
+            used: formatAmount6(used),
+            unused: formatAmount6(unused),
+            claimable: formatAmount6(claimable),
+          },
+        })
+      } catch (error) {
+        next(error)
+      }
+    },
+  )
+
   router.get(
     '/history',
     authenticateToken,

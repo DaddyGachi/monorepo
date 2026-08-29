@@ -1,127 +1,99 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitForElementToBeRemoved } from "@testing-library/react";
+// ApartmentReviews.test.tsx – component tests for ApartmentReviews
+import React from 'react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@/components/__tests__/test-utils';
+import { ApartmentReviews } from '@/components/properties/ApartmentReviews';
+import '@testing-library/jest-dom';
 
-const mockT = (key: string) => key;
-
-vi.mock("next/navigation", () => ({
+// Mock next/navigation hooks
+vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn() }),
-  usePathname: () => "/properties/1",
+  usePathname: () => '/property/123',
   useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock("next-intl", () => ({
-  useTranslations: () => mockT,
+// Mock the review API
+vi.mock('@/lib/reviewApi', () => ({
+  getApartmentReviews: vi.fn(),
 }));
 
-const mockFn = vi.fn();
-vi.mock("@/lib/reviewApi", () => ({
-  getApartmentReviews: (...args: unknown[]) => mockFn(...args),
-}));
+import { getApartmentReviews } from '@/lib/reviewApi';
 
-vi.mock("@/lib/sanitize", () => ({
-  sanitizeText: (text: string) => text,
-}));
+const mockReviews = [
+  {
+    id: 'r1',
+    rating: 5,
+    userName: 'Alice',
+    content: 'Great place!',
+    date: new Date().toISOString(),
+    verifiedStay: true,
+  },
+  {
+    id: 'r2',
+    rating: 3,
+    userName: 'Bob',
+    content: 'Average experience.',
+    date: new Date().toISOString(),
+    verifiedStay: false,
+  },
+];
 
-import { ApartmentReviews } from "./ApartmentReviews";
-
-describe("ApartmentReviews", () => {
+describe('ApartmentReviews component', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.mocked(getApartmentReviews).mockResolvedValue({
+      reviews: mockReviews as any,
+      totalPages: 1,
+      total: 2,
+      page: 1,
+      pageSize: 10,
+      aggregateRating: 4.0,
+    });
   });
 
-  it("shows loading state initially", () => {
-    mockFn.mockReturnValue(new Promise(() => {}));
-    render(<ApartmentReviews propertyId="apt-1" />);
-    expect(screen.getByText("loading")).toBeInTheDocument();
+  it('displays loading spinner initially', async () => {
+    render(<ApartmentReviews propertyId="prop-123" />);
+    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
   });
 
-  it("shows empty state when no reviews", async () => {
-    mockFn.mockResolvedValue({
+  it('renders reviews after loading', async () => {
+    render(<ApartmentReviews propertyId="prop-123" />);
+    await waitFor(() => expect(screen.getByText(/great place!/i)).toBeInTheDocument());
+    expect(screen.getByText(/alice/i)).toBeInTheDocument();
+    expect(screen.getByText(/average experience/i)).toBeInTheDocument();
+    // Verify aggregate rating is shown
+    expect(screen.getByText('4.0')).toBeInTheDocument();
+  });
+
+  it('shows error state when API fails', async () => {
+    vi.mocked(getApartmentReviews).mockRejectedValue(new Error('Network'));
+    render(<ApartmentReviews propertyId="prop-123" />);
+    await waitFor(() => expect(screen.getByText(/error/i)).toBeInTheDocument());
+    const retryBtn = screen.getByRole('button', { name: /try again/i });
+    expect(retryBtn).toBeInTheDocument();
+    // Mock successful retry
+    vi.mocked(getApartmentReviews).mockResolvedValue({
+      reviews: mockReviews as any,
+      totalPages: 1,
+      total: 2,
+      page: 1,
+      pageSize: 10,
+      aggregateRating: 4.0,
+    });
+    fireEvent.click(retryBtn);
+    await waitFor(() => expect(screen.getByText(/great place!/i)).toBeInTheDocument());
+  });
+
+  it('handles empty reviews list', async () => {
+    vi.mocked(getApartmentReviews).mockResolvedValue({
       reviews: [],
+      totalPages: 0,
       total: 0,
       page: 1,
       pageSize: 10,
-      totalPages: 0,
       aggregateRating: null,
     });
-    render(<ApartmentReviews propertyId="apt-1" />);
-    await waitForElementToBeRemoved(() => screen.queryByText("loading"));
-    expect(screen.getByText("noReviews")).toBeInTheDocument();
-  });
-
-  it("shows reviews when data is returned", async () => {
-    mockFn.mockResolvedValue({
-      reviews: [
-        {
-          id: "r1",
-          apartmentId: "apt-1",
-          userId: "u1",
-          userName: "Emeka Obi",
-          rating: 5,
-          content: "Great apartment!",
-          date: "2024-12-01",
-          verifiedStay: true,
-          isHidden: false,
-          isReported: false,
-          helpfulCount: 12,
-        },
-      ],
-      total: 1,
-      totalPages: 1,
-      aggregateRating: 5.0,
-    });
-    render(<ApartmentReviews propertyId="apt-1" />);
-    await waitForElementToBeRemoved(() => screen.queryByText("loading"));
-    expect(screen.getByText("Emeka Obi")).toBeInTheDocument();
-    expect(screen.getByText("Great apartment!")).toBeInTheDocument();
-  });
-
-  it("shows aggregate rating when reviews exist", async () => {
-    mockFn.mockResolvedValue({
-      reviews: [
-        {
-          id: "r1",
-          apartmentId: "apt-1",
-          userId: "u1",
-          userName: "Test",
-          rating: 4,
-          content: "Good",
-          date: "2024-12-01",
-          verifiedStay: false,
-          isHidden: false,
-          isReported: false,
-          helpfulCount: 0,
-        },
-      ],
-      total: 5,
-      totalPages: 1,
-      aggregateRating: 4.2,
-    });
-    render(<ApartmentReviews propertyId="apt-1" />);
-    await waitForElementToBeRemoved(() => screen.queryByText("loading"));
-    expect(screen.getByText("4.2")).toBeInTheDocument();
-    expect(screen.getByText("5 reviews")).toBeInTheDocument();
-  });
-
-  it("shows error state on fetch failure", async () => {
-    mockFn.mockRejectedValue(new Error("Network error"));
-    render(<ApartmentReviews propertyId="apt-1" />);
-    await waitForElementToBeRemoved(() => screen.queryByText("loading"));
-    expect(screen.getAllByText("errorTitle").length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("hides aggregate rating when no reviews", async () => {
-    mockFn.mockResolvedValue({
-      reviews: [],
-      total: 0,
-      page: 1,
-      pageSize: 10,
-      totalPages: 0,
-      aggregateRating: null,
-    });
-    render(<ApartmentReviews propertyId="apt-1" />);
-    await waitForElementToBeRemoved(() => screen.queryByText("loading"));
-    expect(screen.getByText("noReviews")).toBeInTheDocument();
-    expect(screen.queryByText("reviews")).not.toBeInTheDocument();
+    render(<ApartmentReviews propertyId="prop-123" />);
+    await waitFor(() => expect(screen.getByText(/no reviews/i)).toBeInTheDocument());
   });
 });

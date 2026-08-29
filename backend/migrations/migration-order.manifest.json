@@ -272,6 +272,10 @@
     {
       "position": 68,
       "filename": "045_correlation_ids.sql"
+    },
+    {
+      "position": 69,
+      "filename": "046_payment_disputes_deal_id.sql"
     }
   ]
 }

@@ -26,6 +26,10 @@ import {
 import { AppError, notFound } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { validate } from "../middleware/validate.js";
+import {
+  assertAdminSecret,
+  requireAdminSecret,
+} from "../middleware/adminSecret.js";
 import { markRewardPaidSchema } from "../schemas/reward.js";
 import {
   adminListingFiltersSchema,
@@ -52,14 +56,6 @@ export function createAdminRouter(
 ) {
   const router = Router();
   const sender = new OutboxSender(adapter);
-
-  // Admin auth guard helper
-  function requireAdminSecret(req: Request) {
-    const headerSecret = req.headers["x-admin-secret"];
-    if (env.MANUAL_ADMIN_SECRET && headerSecret !== env.MANUAL_ADMIN_SECRET) {
-      throw new AppError(ErrorCode.FORBIDDEN, 403, "Invalid admin secret");
-    }
-  }
 
   /**
    * GET /api/admin/flags
@@ -95,13 +91,7 @@ export function createAdminRouter(
           );
         }
 
-        const headerSecret = req.headers["x-admin-secret"];
-        if (
-          env.MANUAL_ADMIN_SECRET &&
-          headerSecret !== env.MANUAL_ADMIN_SECRET
-        ) {
-          throw new AppError(ErrorCode.FORBIDDEN, 403, "Invalid admin secret");
-        }
+        assertAdminSecret(req);
 
         const fromKeyId =
           typeof req.body.fromKeyId === "string"
@@ -882,7 +872,7 @@ export function createAdminRouter(
     "/indexer/metrics",
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        requireAdminSecret(req);
+        assertAdminSecret(req);
 
         if (!indexer) {
           throw new AppError(
@@ -917,7 +907,7 @@ export function createAdminRouter(
     "/indexer/pause",
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        requireAdminSecret(req);
+        assertAdminSecret(req);
 
         if (!indexer) {
           throw new AppError(
@@ -966,7 +956,7 @@ export function createAdminRouter(
     "/indexer/resume",
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        requireAdminSecret(req);
+        assertAdminSecret(req);
 
         if (!indexer) {
           throw new AppError(
@@ -1092,6 +1082,34 @@ export function createAdminRouter(
                     userId: record.userId,
                   },
                 );
+
+                // Enqueue allowlist add operation for on-chain recording
+                const user = await (req as any).authRepository?.getById(record.userId);
+                if (user?.walletAddress) {
+                  await outboxStore.create({
+                    txType: TxType.ALLOWLIST_ADD,
+                    source: 'kyc_approval',
+                    ref: id,
+                    payload: {
+                      address: user.walletAddress,
+                      label: 'approved',
+                    },
+                    aggregateId: record.userId,
+                    aggregateType: 'user',
+                    eventType: 'KYC_APPROVED',
+                    requestId: req.requestId,
+                  });
+                  logger.info('Allowlist add enqueued for KYC approval', {
+                    outboxRef: id,
+                    userId: record.userId,
+                    address: user.walletAddress,
+                  });
+                } else {
+                  logger.warn('User has no wallet address, skipping allowlist add', {
+                    userId: record.userId,
+                    kycId: id,
+                  });
+                }
               } else {
                 if (record.status !== "pending" && record.status !== "in_review") {
                   return {
@@ -1115,9 +1133,35 @@ export function createAdminRouter(
                     batchId,
                     recordId: id,
                     userId: record.userId,
-                    reason,
                   },
                 );
+
+                // Enqueue allowlist remove operation for on-chain recording
+                const user = await (req as any).authRepository?.getById(record.userId);
+                if (user?.walletAddress) {
+                  await outboxStore.create({
+                    txType: TxType.ALLOWLIST_REMOVE,
+                    source: 'kyc_rejection',
+                    ref: id,
+                    payload: {
+                      address: user.walletAddress,
+                    },
+                    aggregateId: record.userId,
+                    aggregateType: 'user',
+                    eventType: 'KYC_REJECTED',
+                    requestId: req.requestId,
+                  });
+                  logger.info('Allowlist remove enqueued for KYC rejection', {
+                    outboxRef: id,
+                    userId: record.userId,
+                    address: user.walletAddress,
+                  });
+                } else {
+                  logger.warn('User has no wallet address, skipping allowlist remove', {
+                    userId: record.userId,
+                    kycId: id,
+                  });
+                }
               }
 
               return { id, success: true };
@@ -1244,12 +1288,21 @@ export function createAdminRouter(
               }
 
               const newStatus = action === "resolve" ? "resolved" : "rejected";
-              await paymentDisputeRepository.updateStatus(
+              const updated = await paymentDisputeRepository.updateStatus(
                 id,
                 newStatus,
                 resolution,
                 adminId
               );
+
+              if (updated) {
+                const { enqueueResolveRentDispute } = await import(
+                  "../services/disputes/rentReleaseSync.js"
+                );
+                enqueueResolveRentDispute(updated, newStatus, resolution ?? "").catch((err) =>
+                  logger.error("Failed to enqueue resolve_rent_dispute for dispute:", err)
+                );
+              }
 
               auditLog(
                 "DISPUTE_RESOLVED" as AuditEventType,
