@@ -96,4 +96,19 @@ export interface SorobanAdapter {
   setOperator?(contractId: string, operatorAddress: string | null): Promise<string>
   init?(contractId: string, adminAddress: string, operatorAddress?: string): Promise<string>
   syncDealStatus?(params: SyncDealStatusParams): Promise<void>
+
+  // Contract access role management (contract_access contract)
+  proposeAssignRole?(subject: string, role: number): Promise<string>
+  confirmAssignRole?(subject: string): Promise<string>
+  delegatePermission?(delegatee: string, permission: number): Promise<string>
+  getRole?(address: string): Promise<number | null>
+  hasPermission?(address: string, permission: number): Promise<boolean>
+  listRoles?(): Promise<Array<{ address: string; role: number }>>
+
+  // Upgradeable proxy governance (upgradeable_proxy contract)
+  proposeUpgrade?(newWasmHash: string): Promise<string>
+  confirmUpgrade?(newWasmHash: string): Promise<string>
+  cancelUpgrade?(): Promise<string>
+  transferAdmin?(newAdminAddress: string): Promise<string>
+  hasPendingUpgrade?(): Promise<boolean>
 }

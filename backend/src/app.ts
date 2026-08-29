@@ -24,6 +24,8 @@ import { createSorobanAdapter } from "./soroban/index.js"
 import { createBalanceRouter } from "./routes/balance.js"
 import { createPaymentsRouter } from "./routes/payments.js"
 import { createAdminRouter } from "./routes/admin.js"
+import { createAdminContractAccessRouter } from "./routes/adminContractAccess.js"
+import { createAdminUpgradeableProxyRouter } from "./routes/adminUpgradeableProxy.js"
 import { createDealsRouter } from "./routes/deals.js"
 import { createWhistleblowerRouter } from "./routes/whistleblower.js"
 import { createStakingRouter } from "./routes/staking.js"
@@ -676,6 +678,8 @@ export function createApp() {
   app.use('/api/v1/admin', createAdminWithdrawalsRouter(ngnWalletService))
   app.use('/api/v1/payments', createPaymentsRouter(sorobanAdapter))
   app.use('/api/v1/admin', createAdminRouter(sorobanAdapter, walletStore as any, encryptionService as any, indexer))
+  app.use('/api/v1/admin/contract-access', createAdminContractAccessRouter(sorobanAdapter))
+  app.use('/api/v1/admin/upgradeable-proxy', createAdminUpgradeableProxyRouter(sorobanAdapter))
   app.use('/api/v1/admin/reconciliation', createAdminReconciliationRouter(ngnWalletService))
   app.use('/api/v1/admin/secrets', createSecretRotationRouter())
   app.use('/api/v1/admin/jobs', createAdminJobsRouter())
@@ -712,6 +716,8 @@ export function createApp() {
     app.use('/api/admin', createAdminWithdrawalsRouter(ngnWalletService))
     app.use('/api/payments', createPaymentsRouter(sorobanAdapter))
     app.use('/api/admin', createAdminRouter(sorobanAdapter, walletStore as any, encryptionService as any, indexer))
+    app.use('/api/admin/contract-access', createAdminContractAccessRouter(sorobanAdapter))
+    app.use('/api/admin/upgradeable-proxy', createAdminUpgradeableProxyRouter(sorobanAdapter))
     app.use('/api/admin/reconciliation', createAdminReconciliationRouter(ngnWalletService))
     app.use('/api/admin/secrets', createSecretRotationRouter())
     app.use('/api/admin/jobs', createAdminJobsRouter())
@@ -747,6 +753,8 @@ export function createApp() {
         indexer,
       ),
     );
+    app.use("/api/admin/contract-access", createAdminContractAccessRouter(sorobanAdapter));
+    app.use("/api/admin/upgradeable-proxy", createAdminUpgradeableProxyRouter(sorobanAdapter));
     app.use(
       "/api/admin/reconciliation",
       createAdminReconciliationRouter(ngnWalletService),
@@ -833,6 +841,8 @@ export function createApp() {
       indexer,
     ),
   );
+  app.use("/api/v1/admin/contract-access", createAdminContractAccessRouter(sorobanAdapter));
+  app.use("/api/v1/admin/upgradeable-proxy", createAdminUpgradeableProxyRouter(sorobanAdapter));
   app.use(
     "/api/v1/admin/reconciliation",
     createAdminReconciliationRouter(ngnWalletService),

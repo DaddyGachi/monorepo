@@ -235,4 +235,63 @@ export class StubSorobanAdapter implements SorobanAdapter {
           logger.debug('Soroban stub: getTenantReputation', { tenantId, found: record !== null })
           return record
      }
+
+     // Contract access role management stub methods
+     async proposeAssignRole(subject: string, role: number): Promise<string> {
+          logger.info('Soroban stub: proposeAssignRole', { subject, role })
+          return 'stub_tx_hash_propose_assign_role'
+     }
+
+     async confirmAssignRole(subject: string): Promise<string> {
+          logger.info('Soroban stub: confirmAssignRole', { subject })
+          return 'stub_tx_hash_confirm_assign_role'
+     }
+
+     async delegatePermission(delegatee: string, permission: number): Promise<string> {
+          logger.info('Soroban stub: delegatePermission', { delegatee, permission })
+          return 'stub_tx_hash_delegate_permission'
+     }
+
+     async getRole(address: string): Promise<number | null> {
+          logger.debug('Soroban stub: getRole', { address })
+          // Return Admin role (0) as default for stub
+          return 0
+     }
+
+     async hasPermission(address: string, permission: number): Promise<boolean> {
+          logger.debug('Soroban stub: hasPermission', { address, permission })
+          // Return true for all permissions in stub mode
+          return true
+     }
+
+     async listRoles(): Promise<Array<{ address: string; role: number }>> {
+          logger.debug('Soroban stub: listRoles')
+          return []
+     }
+
+     // Upgradeable proxy governance stub methods
+     async proposeUpgrade(newWasmHash: string): Promise<string> {
+          logger.info('Soroban stub: proposeUpgrade', { wasmHash: newWasmHash })
+          return 'stub_tx_hash_propose_upgrade'
+     }
+
+     async confirmUpgrade(newWasmHash: string): Promise<string> {
+          logger.info('Soroban stub: confirmUpgrade', { wasmHash: newWasmHash })
+          return 'stub_tx_hash_confirm_upgrade'
+     }
+
+     async cancelUpgrade(): Promise<string> {
+          logger.info('Soroban stub: cancelUpgrade')
+          return 'stub_tx_hash_cancel_upgrade'
+     }
+
+     async transferAdmin(newAdminAddress: string): Promise<string> {
+          logger.info('Soroban stub: transferAdmin', { newAdmin: newAdminAddress })
+          return 'stub_tx_hash_transfer_admin'
+     }
+
+     async hasPendingUpgrade(): Promise<boolean> {
+          logger.debug('Soroban stub: hasPendingUpgrade')
+          return false
+     }
 }
