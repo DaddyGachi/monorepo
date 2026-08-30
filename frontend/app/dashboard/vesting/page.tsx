@@ -95,8 +95,8 @@ export default function VestingPage() {
     if (!vestingSchedule) return 0;
     const total = BigInt(vestingSchedule.totalAmount);
     const vested = BigInt(vestingSchedule.vestedAmount);
-    if (total === 0n) return 0;
-    return Number((vested * 100n) / total);
+    if (total === BigInt(0)) return 0;
+    return Number((vested * BigInt(100)) / total);
   };
 
   // Check if we're pre-cliff
