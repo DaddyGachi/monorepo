@@ -173,6 +173,9 @@ import { createRentGuaranteeProviderFromEnv } from "./services/insurance/rentGua
 import { createAdminCreditScoreRouter, createCreditScoreRouter } from "./routes/creditScore.js";
 import { createSorobanContractsRouter } from "./routes/sorobanContracts.js";
 import { createContractEventsRouter } from "./routes/contractEvents.js";
+import { createVestingScheduleRouter } from "./routes/vestingSchedule.js";
+import { createWhistleblowerRewardsRouter } from "./routes/whistleblowerRewards.js";
+import { createCircuitBreakerRouter } from "./routes/circuitBreaker.js";
 
 import { initFraudStore, PostgresFraudStore } from "./fraud/index.js";
 import { createAdminFraudRouter } from "./routes/adminFraud.js";
@@ -691,6 +694,10 @@ export function createApp() {
   app.use('/api/v1/admin/contract-access', createAdminContractAccessRouter(sorobanAdapter))
   app.use('/api/v1/admin/upgradeable-proxy', createAdminUpgradeableProxyRouter(sorobanAdapter))
   app.use('/api/v1/admin/reconciliation', createAdminReconciliationRouter(ngnWalletService))
+  app.use('/api/v1/admin/vesting-schedule', createVestingScheduleRouter(sorobanAdapter))
+  app.use('/api/v1/vesting-schedule', createVestingScheduleRouter(sorobanAdapter))
+  app.use('/api/v1/whistleblower-rewards', createWhistleblowerRewardsRouter(sorobanAdapter))
+  app.use('/api/v1/admin/circuit-breaker', createCircuitBreakerRouter(sorobanAdapter))
   app.use('/api/v1/admin/secrets', createSecretRotationRouter())
   app.use('/api/v1/admin/jobs', createAdminJobsRouter())
   app.use('/api/v1/admin/quota', createAdminQuotaRouter())
@@ -730,6 +737,10 @@ export function createApp() {
     app.use('/api/admin/contract-access', createAdminContractAccessRouter(sorobanAdapter))
     app.use('/api/admin/upgradeable-proxy', createAdminUpgradeableProxyRouter(sorobanAdapter))
     app.use('/api/admin/reconciliation', createAdminReconciliationRouter(ngnWalletService))
+    app.use('/api/admin/vesting-schedule', createVestingScheduleRouter(sorobanAdapter))
+    app.use('/api/vesting-schedule', createVestingScheduleRouter(sorobanAdapter))
+    app.use('/api/whistleblower-rewards', createWhistleblowerRewardsRouter(sorobanAdapter))
+    app.use('/api/admin/circuit-breaker', createCircuitBreakerRouter(sorobanAdapter))
     app.use('/api/admin/secrets', createSecretRotationRouter())
     app.use('/api/admin/jobs', createAdminJobsRouter())
     app.use('/api/admin/quota', createAdminQuotaRouter())
