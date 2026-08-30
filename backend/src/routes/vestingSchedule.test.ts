@@ -6,12 +6,10 @@ import { createVestingScheduleRouter } from './vestingSchedule.js'
 import { SorobanAdapter } from '../soroban/adapter.js'
 
 // Mock the env module
-const mockEnv = {
-  MANUAL_ADMIN_SECRET: 'test-secret',
-}
-
 vi.mock('../schemas/env.js', () => ({
-  env: mockEnv,
+  env: {
+    MANUAL_ADMIN_SECRET: 'test-secret',
+  },
 }))
 
 class MockSorobanAdapter implements SorobanAdapter {

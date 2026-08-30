@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Mock the env module
 vi.mock('../schemas/env.js', () => ({
   env: {
-    SOROBAN_ADMIN_SECRET: 'test-admin-secret',
+    MANUAL_ADMIN_SECRET: 'test-secret',
   },
 }))
 
@@ -158,7 +158,7 @@ describe('Circuit Breaker Routes', () => {
       const response = await request(app)
         .post('/api/admin/circuit-breaker/freeze')
 
-      expect(response.status).toBe(401)
+      expect(response.status).toBe(403)
     })
   })
 
@@ -179,7 +179,7 @@ describe('Circuit Breaker Routes', () => {
       const response = await request(app)
         .get('/api/admin/circuit-breaker/status')
 
-      expect(response.status).toBe(401)
+      expect(response.status).toBe(403)
     })
   })
 
@@ -206,7 +206,7 @@ describe('Circuit Breaker Routes', () => {
           destination: 'GDESTINATION123456',
         })
 
-      expect(response.status).toBe(401)
+      expect(response.status).toBe(403)
     })
   })
 
@@ -227,7 +227,7 @@ describe('Circuit Breaker Routes', () => {
       const response = await request(app)
         .post('/api/admin/circuit-breaker/execute-drain')
 
-      expect(response.status).toBe(401)
+      expect(response.status).toBe(403)
     })
   })
 
@@ -254,7 +254,7 @@ describe('Circuit Breaker Routes', () => {
           delaySeconds: 3600,
         })
 
-      expect(response.status).toBe(401)
+      expect(response.status).toBe(403)
     })
   })
 })
